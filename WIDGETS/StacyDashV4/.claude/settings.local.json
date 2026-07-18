@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(open *)",
+      "Bash(chmod +x *)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(bash *)",
+      "Bash(/usr/bin/python3 ~/.claude/statusline.py)"
+    ]
+  }
+}
