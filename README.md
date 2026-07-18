@@ -136,6 +136,24 @@ Em Linux, o script `deploy.sh` copia os arquivos para um cartão SD ou rádio mo
 
 O modo `--dry-run` apenas lista as operações. No deploy real, o script atualiza o widget, os áudios e as imagens. Se `/flights-count.csv` já existir no rádio, ele é preservado para não apagar o histórico de voos.
 
+### Releases no GitHub
+
+O workflow `.github/workflows/release.yml` gera automaticamente um pacote pronto para o cartão SD. Para publicar uma versão, crie e envie uma tag iniciada por `v`:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+O GitHub Actions criará o release e anexará:
+
+- `StacyDash-v1.0.0.zip`, com `WIDGETS/`, `IMAGES/` e este README na raiz;
+- `StacyDash-v1.0.0.zip.sha256`, para conferir a integridade do download.
+
+O pacote não inclui `flights-count.csv`, evitando que uma atualização extraída sobre o cartão apague o histórico. Em uma instalação nova, o widget cria esse arquivo automaticamente ao registrar o primeiro voo. Também é possível copiar o arquivo inicial do repositório ou usar `deploy.sh`, que só o instala quando ainda não existe.
+
+O workflow pode ser executado manualmente na aba **Actions** para testar e baixar o artefato sem criar um GitHub Release. Se existir um arquivo `release-notes/<tag>.md`, ele será usado como descrição; caso contrário, o GitHub gera as notas automaticamente.
+
 ## Configuração do widget
 
 | Opção | Função | Padrão |

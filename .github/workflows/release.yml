@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build SD card package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${GITHUB_REF_NAME:-manual}"
+          ASSET_NAME="StacyDash-${VERSION}.zip"
+          PACKAGE_ROOT="dist/sd-card"
+
+          rm -rf dist
+          mkdir -p \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/BatterySounds" \
+            "${PACKAGE_ROOT}/IMAGES"
+
+          cp WIDGETS/StacyDashV4/main.lua \
+            WIDGETS/StacyDashV4/default.png \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/"
+          cp WIDGETS/StacyDashV4/BatterySounds/*.wav \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/BatterySounds/"
+          cp IMAGES/*.png "${PACKAGE_ROOT}/IMAGES/"
+          cp README.md "${PACKAGE_ROOT}/"
+
+          (
+            cd "${PACKAGE_ROOT}"
+            zip -r -9 "../../${ASSET_NAME}" .
+          )
+
+          sha256sum "${ASSET_NAME}" > "${ASSET_NAME}.sha256"
+
+          echo "asset_name=${ASSET_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.asset_name }}
+          path: |
+            ${{ steps.package.outputs.asset_name }}
+            ${{ steps.package.outputs.asset_name }}.sha256
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET_NAME: ${{ steps.package.outputs.asset_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          NOTES_FILE="release-notes/${GITHUB_REF_NAME}.md"
+          ASSETS=("${ASSET_NAME}" "${ASSET_NAME}.sha256")
+
+          if [[ -f "${NOTES_FILE}" ]]; then
+            gh release create "${GITHUB_REF_NAME}" "${ASSETS[@]}" \
+              --title "StacyDash ${GITHUB_REF_NAME}" \
+              --notes-file "${NOTES_FILE}"
+          else
+            gh release create "${GITHUB_REF_NAME}" "${ASSETS[@]}" \
+              --title "StacyDash ${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi
