@@ -10,7 +10,7 @@ O widget foi feito para rádios coloridos com tela **800 × 480** e utiliza a in
 
 - headspeed atual e máximo da sessão;
 - RPM de cauda, quando disponível;
-- estado do governor do Rotorflight;
+- estado do governor do Rotorflight, com fallback pelo percentual de throttle;
 - corrente atual e máxima;
 - tensão por célula atual e mínima;
 - tensão do BEC e mínima;
@@ -48,10 +48,25 @@ O dashboard continua funcionando parcialmente quando sensores opcionais não est
 | `Bat%` | percentual calculado pelo Rotorflight/Smart Fuel |
 | `Tesc` | temperatura do ESC e máximo da sessão |
 | `Gov` | estado do governor e validação do estado do motor |
+| `Thr` | percentual de throttle usado como fallback visual quando `Gov` não está disponível |
 | `BAT#` | número do perfil de bateria |
 | `Vbat` | tensão total do pack e validação da presença da bateria |
 
 No perfil Electric, `Bat%` é a fonte preferencial do indicador de carga. Se ele não estiver disponível, o widget estima o percentual a partir de `Vcel`. Por isso, para uma barra funcional, disponibilize `Bat%` **ou** `Vcel`; `Vbat` ajuda a confirmar que há um pack conectado quando `Bat%` é zero.
+
+### Estado do governor sem `Gov`
+
+Quando o sensor `Gov` fornece um estado válido, ele sempre tem prioridade e o dashboard mostra os estados completos do Rotorflight, como `OFF`, `IDLE`, `SPOOLUP`, `ACTIVE`, `AUTOROT` e `BAILOUT`.
+
+Se o modelo não utiliza governor — por exemplo, com o modo Electric Governor desativado no Rotorflight — e `Gov` não está disponível, o componente passa a inferir o estado pelo sensor `Thr`:
+
+| Percentual de `Thr` | Estado exibido |
+| --- | --- |
+| 0% | `OFF` |
+| acima de 0% até 50% | `SPOOLUP` |
+| acima de 50% | `ACTIVE` |
+
+Se nem `Gov` nem `Thr` estiverem disponíveis, o componente mostra `--`. Um valor presente, porém desconhecido ou inválido em `Gov`, também mostra `--` em vez de ocultar uma possível mudança futura do protocolo com a inferência de throttle.
 
 No perfil Nitro, `Vbec` é tratado como a tensão total de uma bateria de receptor 2S. Os limites mínimo e máximo são configuráveis no widget.
 
@@ -109,6 +124,17 @@ Depois:
 5. Configure **Motor Switch** com o controle físico usado para ligar/desligar o motor.
 
 O layout exige uma tela 800 × 480 e uma zona praticamente cheia (mínimo de 760 × 420). Em outra resolução, o widget exibe uma mensagem de incompatibilidade.
+
+### Deploy pelo computador
+
+Em Linux, o script `deploy.sh` copia os arquivos para um cartão SD ou rádio montado no sistema. Informe a raiz do cartão, isto é, a pasta dentro da qual ficam `WIDGETS` e `IMAGES`:
+
+```bash
+./deploy.sh --dry-run /run/media/$USER/EDGETX
+./deploy.sh /run/media/$USER/EDGETX
+```
+
+O modo `--dry-run` apenas lista as operações. No deploy real, o script atualiza o widget, os áudios e as imagens. Se `/flights-count.csv` já existir no rádio, ele é preservado para não apagar o histórico de voos.
 
 ## Configuração do widget
 

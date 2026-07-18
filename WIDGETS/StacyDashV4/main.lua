@@ -183,6 +183,7 @@ local D = {
   tailRpmValid    = false,
   govValid        = false,
   govCurrentInvalid = false,
+  throttleValid   = false,
 }
 local A = {
   displayPercent     = 0,
@@ -575,6 +576,9 @@ local ROTORFLIGHT_SENSOR = {
   batteryPercent   = "Bat%",
   escTemperature   = "Tesc",
   governorMode     = "Gov",
+  -- Used as a display fallback when Rotorflight is running without a governor.
+  -- A valid Gov state remains authoritative whenever it is available.
+  throttle         = "Thr",
   batteryProfile   = "BAT#",
   -- Pack voltage remains a separate input used to validate electric packs.
   packVoltage      = "Vbat",
@@ -776,6 +780,20 @@ local function getGovernorMode()
   F.govNumber = valid and whole or false
   return valid and whole or nil
 end
+local function getThrottle()
+  local v = F.throttle
+  if v ~= nil then return v ~= false and v or nil end
+  if OPT.heliType == HELI_OMPHOBBY then
+    D.throttleValid = false
+    F.throttle = false
+    return nil
+  end
+  v = getSensorNumber("throttle")
+  local sane = v ~= nil and v >= 0 and v <= 100
+  D.throttleValid = sane
+  F.throttle = sane and v or false
+  return sane and v or nil
+end
 local function getGovState()
   local v = F.gov
   if v ~= nil then return v end
@@ -783,7 +801,24 @@ local function getGovState()
     v = "--"
   else
     local g = getGovernorMode()
-    v = g == nil and "--" or GOV_STATES[g]
+    if g ~= nil then
+      v = GOV_STATES[g]
+    elseif D.govCurrentInvalid then
+      -- A current but unknown Gov enum must remain visible as unavailable. It
+      -- may represent a future state and must not be overwritten by throttle.
+      v = "--"
+    else
+      local throttle = getThrottle()
+      if throttle == nil then
+        v = "--"
+      elseif throttle <= 0 then
+        v = "OFF"
+      elseif throttle <= 50 then
+        v = "SPOOLUP"
+      else
+        v = "ACTIVE"
+      end
+    end
   end
   F.gov = v
   return v
@@ -1480,6 +1515,7 @@ local function resetSessionEvidence()
   D.tailRpmValid = false
   D.govValid = false
   D.govCurrentInvalid = false
+  D.throttleValid = false
   D.hasBattData = false
   D.adjustedPercent = 0
   D.capacity = 0
@@ -2462,7 +2498,7 @@ end
 -- detects movement of the whole switch and validates it against Gov/Hspd or NR.
 -- Telemetry sensor sources are intentionally omitted: the widget auto-detects standard
 -- Rotorflight sensor names (Hspd, Tspd, Vbec, Vcel, Cel#, Curr, Capa, Bat%,
--- Tesc, Gov, BAT#, Vbat, and RQly). Nitro Rx pack voltage uses Vbec only.
+-- Tesc, Gov, Thr, BAT#, Vbat, and RQly). Nitro Rx pack voltage uses Vbec only.
 -- OMPHOBBY uses NR, RxBt, Curr, Capa, Bat%, and Tmp; its cell count comes
 -- from M1/M2 in the model name, and it has no tail-RPM telemetry source.
 -- "Motor Switch" is a raw SOURCE so settings select the physical control (SG),
