@@ -46,6 +46,11 @@ esac
 
 required_files=(
   "WIDGETS/StacyDashV4/main.lua"
+  "WIDGETS/StacyDashV4/flights.lua"
+  "WIDGETS/StacyDashV4/status.lua"
+  "WIDGETS/StacyDashV4/themes.lua"
+  "WIDGETS/StacyDashV4/ui.lua"
+  "WIDGETS/StacyDashV4/leds.lua"
   "WIDGETS/StacyDashV4/default.png"
   "flights-count.csv"
 )
@@ -61,14 +66,22 @@ copy_file() {
   local source=$1
   local destination=$2
 
+  if [[ -f $destination ]] && cmp -s -- "$source" "$destination"; then
+    return
+  fi
+
   if $dry_run; then
-    printf '[dry-run] %s -> %s\n' "$source" "$destination"
+    if [[ -e $destination ]]; then
+      printf '[dry-run] Atualizar: %s\n' "${source#"$project_dir"/}"
+    else
+      printf '[dry-run] Instalar: %s\n' "${source#"$project_dir"/}"
+    fi
     return
   fi
 
   mkdir -p -- "$(dirname -- "$destination")"
   cp -p -- "$source" "$destination"
-  printf 'Copiado: %s\n' "${source#"$project_dir"/}"
+  printf 'Atualizado: %s\n' "${source#"$project_dir"/}"
 }
 
 copy_matching_files() {
@@ -86,9 +99,10 @@ copy_matching_files() {
 
 printf 'Destino do rádio: %s\n' "$radio_root"
 
-copy_file \
-  "$project_dir/WIDGETS/StacyDashV4/main.lua" \
-  "$radio_root/WIDGETS/StacyDashV4/main.lua"
+copy_matching_files \
+  "$project_dir/WIDGETS/StacyDashV4" \
+  "$radio_root/WIDGETS/StacyDashV4" \
+  '*.lua'
 copy_file \
   "$project_dir/WIDGETS/StacyDashV4/default.png" \
   "$radio_root/WIDGETS/StacyDashV4/default.png"
@@ -96,6 +110,19 @@ copy_file \
 copy_matching_files \
   "$project_dir/WIDGETS/StacyDashV4/BatterySounds" \
   "$radio_root/WIDGETS/StacyDashV4/BatterySounds" \
+  '*.wav'
+
+copy_matching_files \
+  "$project_dir/WIDGETS/StacyDashV4/audio" \
+  "$radio_root/WIDGETS/StacyDashV4/audio" \
+  '*.wav'
+copy_matching_files \
+  "$project_dir/WIDGETS/StacyDashV4/audio/gov" \
+  "$radio_root/WIDGETS/StacyDashV4/audio/gov" \
+  '*.wav'
+copy_matching_files \
+  "$project_dir/WIDGETS/StacyDashV4/audio/profile" \
+  "$radio_root/WIDGETS/StacyDashV4/audio/profile" \
   '*.wav'
 
 copy_matching_files \

@@ -11,6 +11,8 @@ O widget foi feito para rádios coloridos com tela **800 × 480** e utiliza a in
 - headspeed atual e máximo da sessão;
 - RPM de cauda, quando disponível;
 - estado do governor do Rotorflight, com fallback pelo percentual de throttle;
+- estado `ARMED`/`DISARMED` e flags que impedem o arm;
+- perfil PID ativo junto ao contador de voos;
 - corrente atual e máxima;
 - tensão por célula atual e mínima;
 - tensão do BEC e mínima;
@@ -24,6 +26,7 @@ O widget foi feito para rádios coloridos com tela **800 × 480** e utiliza a in
 - contador de voos separado por modelo;
 - alertas por voz e vibração para a bateria;
 - alertas por vibração para temperatura do ESC e baixa tensão do BEC;
+- controle opcional dos LEDs RGB do rádio conforme o estado de arm;
 - perfil Nitro com barra e alerta próprios para a bateria do receptor;
 - 18 opções de tema, incluindo fundo transparente;
 - atualização da telemetria e das estatísticas em segundo plano.
@@ -49,6 +52,9 @@ O dashboard continua funcionando parcialmente quando sensores opcionais não est
 | `Tesc` | temperatura do ESC e máximo da sessão |
 | `Gov` | estado do governor e validação do estado do motor |
 | `Thr` | percentual de throttle usado como fallback visual quando `Gov` não está disponível |
+| `ARM` | estado armado/desarmado (`1` e `3` são tratados como armado) |
+| `ARMD` | máscara das flags que impedem o arm |
+| `PID#` | número do perfil PID selecionado |
 | `BAT#` | número do perfil de bateria |
 | `Vbat` | tensão total do pack e validação da presença da bateria |
 
@@ -67,6 +73,12 @@ Se o modelo não utiliza governor — por exemplo, com o modo Electric Governor 
 | acima de 50% | `ACTIVE` |
 
 Se nem `Gov` nem `Thr` estiverem disponíveis, o componente mostra `--`. Um valor presente, porém desconhecido ou inválido em `Gov`, também mostra `--` em vez de ocultar uma possível mudança futura do protocolo com a inferência de throttle.
+
+### Arm, flags e perfil PID
+
+A topbar mostra `ARMED` ou `DISARMED` a partir de `ARM`. Quando houver flags publicadas por `ARMD`, como `THROTTLE`, `ARM SWITCH`, `NO PREARM`, `FAIL SAFE` e `CALIBRATING`, elas têm prioridade e substituem o estado no mesmo componente. Se `ARMD` não for encontrado, o widget também tenta a fonte `Arming Disable`.
+
+O sensor `PID#` é exibido junto ao contador de voos; por exemplo, `10 Flights · P2`. Alterações de arm, governor e perfil são anunciadas pelos mesmos áudios utilizados no DBK. O primeiro valor recebido apenas inicializa o estado, evitando anúncios indevidos ao abrir ou recarregar o widget.
 
 No perfil Nitro, `Vbec` é tratado como a tensão total de uma bateria de receptor 2S. Os limites mínimo e máximo são configuráveis no widget.
 
@@ -104,7 +116,18 @@ Copie o conteúdo desta pasta para a raiz do cartão SD do rádio, preservando e
 └── WIDGETS/
     └── StacyDashV4/
         ├── main.lua
+        ├── flights.lua
+        ├── status.lua
+        ├── themes.lua
+        ├── ui.lua
+        ├── leds.lua
         ├── default.png
+        ├── audio/
+        │   ├── armed.wav
+        │   ├── disarmed.wav
+        │   ├── profile.wav
+        │   ├── gov/
+        │   └── profile/
         └── BatterySounds/
             ├── 50%.wav
             ├── 40%.wav
@@ -125,6 +148,21 @@ Depois:
 
 O layout exige uma tela 800 × 480 e uma zona praticamente cheia (mínimo de 760 × 420). Em outra resolução, o widget exibe uma mensagem de incompatibilidade.
 
+### Organização do código
+
+O widget é dividido em módulos carregados uma única vez na inicialização:
+
+| Arquivo | Responsabilidade |
+| --- | --- |
+| `main.lua` | ciclo do widget, telemetria, alertas de bateria e composição da tela |
+| `flights.lua` | contador por modelo e persistência segura de `flights-count.csv` |
+| `status.lua` | `ARM`, `ARMD`, `PID#` e áudios de transição de arm/governor/perfil |
+| `themes.lua` | nomes e paletas dos temas |
+| `ui.lua` | criação, cache e atualização eficiente das primitivas LVGL |
+| `leds.lua` | animações e cores dos LEDs RGB conforme arm e disable flags |
+
+Essa separação reduz a quantidade de variáveis locais no módulo principal — limitada a 200 pelo Lua do EdgeTX — e permite acrescentar funcionalidades sem concentrar toda a implementação em `main.lua`.
+
 ### Deploy pelo computador
 
 Em Linux, o script `deploy.sh` copia os arquivos para um cartão SD ou rádio montado no sistema. Informe a raiz do cartão, isto é, a pasta dentro da qual ficam `WIDGETS` e `IMAGES`:
@@ -134,7 +172,7 @@ Em Linux, o script `deploy.sh` copia os arquivos para um cartão SD ou rádio mo
 ./deploy.sh /run/media/$USER/EDGETX
 ```
 
-O modo `--dry-run` apenas lista as operações. No deploy real, o script atualiza o widget, os áudios e as imagens. Se `/flights-count.csv` já existir no rádio, ele é preservado para não apagar o histórico de voos.
+O modo `--dry-run` apenas lista as operações necessárias. O script compara o conteúdo local com o destino e copia somente arquivos ausentes ou diferentes; arquivos já atualizados são ignorados. Se `/flights-count.csv` já existir no rádio, ele é sempre preservado para não apagar o histórico de voos.
 
 ### Releases no GitHub
 
@@ -164,6 +202,7 @@ O workflow pode ser executado manualmente na aba **Actions** para testar e baixa
 | **Heli Type** | Electric, Nitro ou OMPHOBBY | Electric |
 | **Batt Reserve %** | reserva removida da escala útil da bateria | 20% |
 | **Battery Voice** | ativa anúncios de bateria | desligado |
+| **Display LEDs** | ativa o controle dos LEDs RGB do rádio | desligado |
 | **Rx Pack Minimum** | tensão considerada vazia no perfil Nitro | 6,60 V |
 | **Rx Pack Maximum** | tensão considerada cheia no perfil Nitro | 8,40 V |
 | **Motor Switch** | chave física do motor | não definida |
@@ -189,6 +228,23 @@ As vibrações de segurança funcionam independentemente dos arquivos de áudio:
 - perfil Nitro: após a bateria do receptor permanecer no mínimo configurado ou abaixo dele por 2 s, vibra repetidamente e, se a voz estiver ativa, repete `dead.wav`.
 
 Alertas dependentes de telemetria não são disparados quando o link foi confirmado como perdido.
+
+Além dos alertas de bateria, a pasta `/WIDGETS/StacyDashV4/audio` contém anúncios de transição para:
+
+- `ARMED` e `DISARMED`;
+- governor `OFF`, `IDLE`, `SPOOLUP` e `ACTIVE`;
+- troca dos perfis PID 1 a 6.
+
+## LEDs RGB
+
+Com **Display LEDs** ativado, o StacyDash controla a faixa RGB do rádio seguindo o mesmo padrão do DBK:
+
+- disable flags presentes: animação vermelha circulante;
+- `ARMED`: azul sólido;
+- `DISARMED`: vermelho sólido;
+- opção desativada: LEDs apagados.
+
+O recurso só atua quando o rádio e a versão do EdgeTX expõem `LED_STRIP_LENGTH`, `setRGBLedColor()` e `applyRGBLedColors()`. Em rádios sem essa API, o módulo não executa nenhuma operação.
 
 ## Contador de voos
 

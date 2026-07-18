@@ -30,13 +30,21 @@ jobs:
           rm -rf dist
           mkdir -p \
             "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/BatterySounds" \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/audio/gov" \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/audio/profile" \
             "${PACKAGE_ROOT}/IMAGES"
 
-          cp WIDGETS/StacyDashV4/main.lua \
+          cp WIDGETS/StacyDashV4/*.lua \
             WIDGETS/StacyDashV4/default.png \
             "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/"
           cp WIDGETS/StacyDashV4/BatterySounds/*.wav \
             "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/BatterySounds/"
+          cp WIDGETS/StacyDashV4/audio/*.wav \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/audio/"
+          cp WIDGETS/StacyDashV4/audio/gov/*.wav \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/audio/gov/"
+          cp WIDGETS/StacyDashV4/audio/profile/*.wav \
+            "${PACKAGE_ROOT}/WIDGETS/StacyDashV4/audio/profile/"
           cp IMAGES/*.png "${PACKAGE_ROOT}/IMAGES/"
           cp README.md "${PACKAGE_ROOT}/"
 

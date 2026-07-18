@@ -50,6 +50,19 @@ local GOV_PAUSE_HOLD_STATE = {
   [7]=true, -- AUTOROT
 }
 local GOV_LABELS = { AUTOROT="AUTO" }
+local MODULE = {}
+function MODULE.load(name)
+  local path = "/WIDGETS/StacyDashV4/" .. name .. ".lua"
+  local chunk = loadScript and loadScript(path)
+  if not chunk and loadfile then chunk = loadfile("WIDGETS/StacyDashV4/" .. name .. ".lua") end
+  assert(chunk, "Unable to load StacyDash module: " .. name)
+  return chunk()
+end
+MODULE.flights = MODULE.load("flights")
+MODULE.status = MODULE.load("status")
+MODULE.themes = MODULE.load("themes")
+MODULE.ui = MODULE.load("ui")
+MODULE.leds = MODULE.load("leds")
 local GOV_COLOR = {}
 local GOV_FALLBACK = {}
 local themeAccent = nil
@@ -57,29 +70,6 @@ local themeAccent = nil
 -- SAME hue (the original monochromatic look). Two-tone themes (reef..miami):
 -- solid bg paired with a DIFFERENT-hue tile. Both keep white text + status
 -- colors legible. CHOICE values are 1-based. (bg = page background, tile = panel.)
-local COLOR_THEMES = {
-  orange = { bg={ 92, 42,  2}, tile={120, 60, 10}, line={160, 86, 24}, dim={230,178,120}, accent={255,155, 35} },
-  red    = { bg={100, 18, 18}, tile={130, 28, 28}, line={180, 50, 50}, dim={240,165,165}, accent={255, 95, 95} },
-  yellow = { bg={ 54, 46,  2}, tile={ 74, 64, 12}, line={120,102, 26}, dim={210,200,125}, accent={250,210, 60} },
-  blue   = { bg={  4, 20, 54}, tile={ 10, 32, 74}, line={ 28, 72,124}, dim={150,180,220}, accent={ 80,165,255} },
-  pink   = { bg={145,  0, 83}, tile={184,  0,105}, line={255, 20,147}, dim={255,196,225}, accent={255,222,239} },
-  green  = { bg={  6, 54, 22}, tile={ 12, 74, 34}, line={ 24,120, 58}, dim={150,215,175}, accent={ 60,220,120} },
-  cyan   = { bg={  2, 44, 50}, tile={  8, 62, 70}, line={ 22,110,122}, dim={150,210,220}, accent={ 40,210,230} },
-  purple = { bg={ 34, 12, 60}, tile={ 50, 22, 82}, line={ 92, 46,140}, dim={190,165,225}, accent={175,110,245} },
-  teal   = { bg={  2, 46, 40}, tile={  8, 64, 56}, line={ 22,112,100}, dim={150,214,202}, accent={ 45,210,180} },
-  lime   = { bg={ 30, 48,  2}, tile={ 44, 66,  8}, line={ 80,116, 22}, dim={200,220,140}, accent={170,225, 55} },
-  reef   = { bg={  8, 22, 58}, tile={  8, 46, 50}, line={ 24, 96,104}, dim={150,190,218}, accent={ 70,200,230} },
-  royal  = { bg={ 40, 16, 66}, tile={ 52, 40, 12}, line={112, 88, 28}, dim={202,172,228}, accent={180,120,248} },
-  moss   = { bg={  8, 52, 26}, tile={ 46, 32, 16}, line={ 96, 68, 34}, dim={165,215,180}, accent={ 70,215,120} },
-  ember  = { bg={ 70, 18, 10}, tile={ 92, 52,  8}, line={150, 88, 26}, dim={235,175,150}, accent={255,150, 50} },
-  miami  = { bg={  4, 46, 52}, tile={ 62, 14, 46}, line={120, 44, 92}, dim={170,208,216}, accent={255, 95,180} },
-}
-local THEME_NAMES = {
-  [2] = "light",  [4] = "orange", [5] = "red",    [6] = "yellow", [7]  = "blue",
-  [8] = "pink",   [9] = "green",  [10]= "cyan",   [11]= "purple", [12] = "teal",
-  [13]= "lime",   [14]= "reef",   [15]= "royal",  [16]= "moss",   [17] = "ember",
-  [18]= "miami",
-}
 local function applyTheme(name)
   local rgb = lcd.RGB
   themeAccent = nil
@@ -120,7 +110,7 @@ local function applyTheme(name)
     C_RED_BR    = rgb( 88,  27,  27)
     C_BLUE_BG   = rgb( 13,  31,  42)
     C_BLUE_BR   = rgb( 30,  66,  88)
-    local ct = COLOR_THEMES[name]
+    local ct = MODULE.themes.colors(name)
     if ct then
       C_BG   = rgb(ct.bg[1],   ct.bg[2],   ct.bg[3])
       C_TILE = rgb(ct.tile[1], ct.tile[2], ct.tile[3])
@@ -146,14 +136,7 @@ end
 -- Shared, SD-card-wide flight history. Keeping one authoritative root file
 -- lets other dashboards use the same per-model counters without migration or
 -- competing widget-local copies.
-local FLIGHTS_PATH              = "/flights-count.csv"
 local TOPBAR_MIN_DUR_DEFAULT    = 60
-local FLIGHT_CACHE_MAX_ENTRIES  = 200
-local flightCache       = nil
-local modelFlights      = 0
-local minFlightDur      = TOPBAR_MIN_DUR_DEFAULT
-local flightModel       = "__default__"
-local timerThresholdArmed = nil
 local S = {
   rpmMax = 0,
   currMax = 0, tempMax = 0,
@@ -184,6 +167,9 @@ local D = {
   govValid        = false,
   govCurrentInvalid = false,
   throttleValid   = false,
+  armValid        = false,
+  armingFlagsValid= false,
+  pidProfileValid = false,
 }
 local A = {
   displayPercent     = 0,
@@ -226,7 +212,6 @@ local A = {
   motorSourcePhysical   = false,
   motorSourceReadable   = false,
   motorConfigError      = "SET MOTOR SWITCH",
-  flightSaveError       = false,
   linkAvailable          = false,
   linkSourceKnown        = false,
   linkSourceSeen         = false,
@@ -240,6 +225,9 @@ local A = {
   escTempHighSince       = nil,
   becLowSince            = nil,
   lastDataTick = -1,
+  lastArmAudioState = nil,
+  lastGovAudioState = nil,
+  lastProfileAudioState = nil,
 }
 local HELI_ELECTRIC, HELI_NITRO, HELI_OMPHOBBY = 1, 2, 3
 local OPT = {
@@ -247,11 +235,15 @@ local OPT = {
   battBarMode   = 0,
   reservePct    = 0,
   battVoice     = false,
+  displayLeds   = false,
   rxPackMin     = 6.6,
   rxPackMax     = 8.4,
   rxPackValid   = true,
   bgTransparent = false,
 }
+MODULE.ledService = MODULE.leds.new({
+  isEnabled = function() return OPT.displayLeds end,
+})
 local BATTERY_VOICE = {
   levels       = { 50, 40, 30, 20, 10, 0 },
   path         = "/WIDGETS/StacyDashV4/BatterySounds/",
@@ -371,7 +363,7 @@ end
 local function applyOptions(opts)
   local rawTheme = tonumber(opts and opts.Theme) or 0
   OPT.bgTransparent   = (rawTheme == 3)
-  applyTheme(THEME_NAMES[rawTheme] or "dark")
+  applyTheme(MODULE.themes.nameForOption(rawTheme))
   local rawBatt = tonumber(opts and opts.TxBatt) or 0
   txIsLiIon = (rawBatt == 2)
   local rawDur = tonumber(opts and (opts.MinFlight
@@ -380,7 +372,7 @@ local function applyOptions(opts)
                  or TOPBAR_MIN_DUR_DEFAULT
   if rawDur < 0 then rawDur = math.abs(rawDur) end
   if rawDur < 1 then rawDur = 1 end
-  minFlightDur = rawDur
+  if MODULE.flightService then MODULE.flightService:setMinimum(rawDur) end
   if opts then
     -- The Motor Switch is the only mapped source. Rotorflight Gov/Hspd or OMP
     -- NR telemetry validates what a movement means; other sensors auto-detect.
@@ -395,6 +387,7 @@ local function applyOptions(opts)
     if OPT.reservePct < 0 then OPT.reservePct = 0 end
     if OPT.reservePct > 50 then OPT.reservePct = 50 end
     OPT.battVoice   = (opts.BattVoice == 1 or opts.BattVoice == true)
+    OPT.displayLeds = (opts.DispLED == 1 or opts.DispLED == true)
     local parsedMin = parseVolt(opts.RxPackMin, nil)
     local parsedMax = parseVolt(opts.RxPackMax, nil)
     OPT.rxPackMin = parsedMin or 6.6
@@ -418,85 +411,6 @@ local function applyOptions(opts)
 end
 local modelImageName = nil
 local modelImagePath = nil
-local READ_ALL_MAX_BYTES = 32 * 1024
-local function readAll(path)
-  local f = io.open(path, "r")
-  if not f then return nil end
-  local parts = {}
-  local total = 0
-  local ok = pcall(function()
-    while true do
-      local chunk = io.read(f, 1024)
-      if chunk == nil or chunk == "" then break end
-      total = total + #chunk
-      if total > READ_ALL_MAX_BYTES then break end
-      parts[#parts+1] = chunk
-      if #chunk < 1024 then break end
-    end
-  end)
-  pcall(io.close, f)
-  if not ok then return nil end
-  return table.concat(parts)
-end
-local function writeAll(path, content)
-  content = content or ""
-  local function writeFile(target)
-    local f = io.open(target, "w")
-    if not f then return false end
-    -- EdgeTX io.write() reports media/write failures by returning nil rather
-    -- than necessarily throwing.  pcall success alone therefore does not
-    -- prove that the bytes reached the file.
-    local called, result = pcall(io.write, f, content)
-    local closed = pcall(io.close, f)
-    return called and result ~= nil and result ~= false and closed
-  end
-  local dirApi = dir
-  local renameFn = type(dirApi) == "table" and dirApi.rename
-                   or (type(os) == "table" and os.rename)
-  local deleteFn = type(dirApi) == "table" and dirApi.del
-                   or (type(os) == "table" and os.remove)
-  local function renameFile(fromPath, toPath)
-    if not renameFn then return false end
-    local ok, result = pcall(renameFn, fromPath, toPath)
-    return ok and (result == nil or result == true or result == 0)
-  end
-  local function deleteFile(target)
-    if not deleteFn then return false end
-    local ok, result = pcall(deleteFn, target)
-    return ok and (result == nil or result == true or result == 0)
-  end
-  if renameFn then
-    local tmp, backup = path .. ".tmp", path .. ".bak"
-    deleteFile(tmp)
-    if not writeFile(tmp) then
-      deleteFile(tmp)
-      return false
-    end
-    local existing = io.open(path, "r")
-    if existing then pcall(io.close, existing) end
-    local movedExisting = false
-    if existing then
-      deleteFile(backup)
-      movedExisting = renameFile(path, backup)
-      if not movedExisting then
-        deleteFile(tmp)
-        return false
-      end
-    end
-    if renameFile(tmp, path) then
-      if movedExisting then deleteFile(backup) end
-      return true
-    end
-    if movedExisting then renameFile(backup, path) end
-    deleteFile(tmp)
-    return false
-  end
-  local f = io.open(path, "w")
-  if not f then return false end
-  local called, result = pcall(io.write, f, content)
-  local closed = pcall(io.close, f)
-  return called and result ~= nil and result ~= false and closed
-end
 local function trim(s) return string.match(s or "", "^%s*(.-)%s*$") end
 local function sanitizeFsName(name)
   if not name then return nil end
@@ -579,6 +493,9 @@ local ROTORFLIGHT_SENSOR = {
   -- Used as a display fallback when Rotorflight is running without a governor.
   -- A valid Gov state remains authoritative whenever it is available.
   throttle         = "Thr",
+  arm              = "ARM",
+  armingDisable    = "ARMD",
+  pidProfile       = "PID#",
   batteryProfile   = "BAT#",
   -- Pack voltage remains a separate input used to validate electric packs.
   packVoltage      = "Vbat",
@@ -823,6 +740,16 @@ local function getGovState()
   F.gov = v
   return v
 end
+MODULE.statusService = MODULE.status.new({
+  data = D,
+  frame = F,
+  alerts = A,
+  getSensorNumber = getSensorNumber,
+  getNamed = function(name) return get(name) end,
+  getGovState = getGovState,
+  getHeliType = function() return OPT.heliType end,
+  ompType = HELI_OMPHOBBY,
+})
 local function getTxVolt()
   local v = F.txVolt
   if v ~= nil then return v end
@@ -1332,6 +1259,11 @@ local function tick(nowT)
   local cellVoltage = getCellVoltage()
   local headRpm = getHeadspeed()
   local governorMode = getGovernorMode()
+  local armState = MODULE.statusService:getArmState()
+  local armingFlags = MODULE.statusService:getArmingDisableFlags()
+  MODULE.statusService:getPidProfile()
+  MODULE.ledService:update(D.armValid and (armState == 1 or armState == 3),
+                           armingFlags ~= nil and armingFlags > 0)
   local hasCellVoltage = D.cellVoltageValid and cellVoltage > 0
   local telemetryEvidence = hasCellVoltage or D.batteryPercentValid
                             or D.capacityValid or D.currentValid
@@ -1385,6 +1317,7 @@ local function tick(nowT)
   -- A raw switch move is never enough to silence a warning. Rotorflight must
   -- corroborate it with Gov or Hspd; OMPHOBBY uses stopped NR.
   updateMotorAlertGate(nowT, governorMode, headRpm)
+  MODULE.statusService:updateAudio()
   -- Percentage voice/haptic alerts belong to the main flight pack shown by
   -- Electric and OMPHOBBY modes. Nitro displays an Rx-pack voltage bar, so it
   -- must never run or retain this electric flight-pack alert state machine.
@@ -1450,47 +1383,6 @@ local function getTimer1Secs()
   F.timerSecs = v
   return v
 end
-local function getFlightCount()
-  return modelFlights
-end
-local function getFlightCache()
-  if flightCache then return flightCache end
-  flightCache = {}
-  local txt = readAll(FLIGHTS_PATH)
-  if not txt or txt == "" then return flightCache end
-  local entries = 0
-  for line in string.gmatch(txt, "[^\r\n]+") do
-    local n = trim(line)
-    if n ~= "" and string.sub(n, 1, 1) ~= "#" then
-      local k, v = string.match(n, "^%s*([^,]+)%s*,%s*([^,]+)")
-      if k and v and k ~= "model_name" then
-        flightCache[trim(k)] = tonumber(v) or 0
-        entries = entries + 1
-        if entries >= FLIGHT_CACHE_MAX_ENTRIES then break end
-      end
-    end
-  end
-  return flightCache
-end
-local function saveFlightCache()
-  if not flightCache then return false end
-  local keys = {}
-  for k in pairs(flightCache) do keys[#keys+1] = k end
-  table.sort(keys)
-  local out = { "model_name,flight_count\n# api_ver=1\n" }
-  for _, k in ipairs(keys) do
-    out[#out+1] = string.format("%s,%d\n", k, tonumber(flightCache[k]) or 0)
-  end
-  local ok = writeAll(FLIGHTS_PATH, table.concat(out))
-  A.flightSaveError = not ok
-  return ok
-end
-local function modelKey(name)
-  if type(name) ~= "string" or name == "" then return "__default__" end
-  local s = trim(name)
-  if s == "" then return "__default__" end
-  return (string.gsub(s, ",", " "))
-end
 local function resetSessionStats()
   S.rpmMax  = 0
   S.currMax = 0
@@ -1516,6 +1408,9 @@ local function resetSessionEvidence()
   D.govValid = false
   D.govCurrentInvalid = false
   D.throttleValid = false
+  D.armValid = false
+  D.armingFlagsValid = false
+  D.pidProfileValid = false
   D.hasBattData = false
   D.adjustedPercent = 0
   D.capacity = 0
@@ -1525,6 +1420,9 @@ local function resetSessionEvidence()
   A.liHvHighSamples = 0
   A.displayPercent = 0
   A.displayPercentInit = false
+  A.lastArmAudioState = nil
+  A.lastGovAudioState = nil
+  A.lastProfileAudioState = nil
   A.motorSwitchLastPosition = nil
   A.motorPausedPosition = nil
   A.motorGateCandidateFrom = nil
@@ -1545,23 +1443,15 @@ local function resetSessionEvidence()
   D.minRxVoltage = nil
   resetBatteryAlertState()
 end
-local function loadModelFlights()
-  local key = modelKey(getModelName())
-  flightModel = key
-  modelFlights = getFlightCache()[key] or 0
-  timerThresholdArmed = nil
-  resetSessionStats()
-  resetSessionEvidence()
-end
-local function timerElapsedSeconds(timer)
-  if type(timer) ~= "table" then return nil end
-  local value = tonumber(timer.value)
-  if not value then return nil end
-  local start = tonumber(timer.start) or 0
-  local elapsed = start > 0 and (start - value) or value
-  if elapsed < 0 then elapsed = 0 end
-  return elapsed
-end
+MODULE.flightService = MODULE.flights.new({
+  getModelName = getModelName,
+  getTimer = getTimer0,
+  minimum = TOPBAR_MIN_DUR_DEFAULT,
+  onModelChanged = function()
+    resetSessionStats()
+    resetSessionEvidence()
+  end,
+})
 local function shiftFlightBatteryAlertTimers(delta)
   if not delta or delta <= 0 then return end
   if (A.battAlertNextTick or 0) > 0 then
@@ -1864,33 +1754,6 @@ updateMotorAlertGate = function(now, governorMode, headRpm)
     clearMotorGateEvidence()
   end
 end
-local function tickFlightCount()
-  local thisModel = modelKey(getModelName())
-  if flightModel ~= thisModel then
-    flightModel = thisModel
-    modelFlights = getFlightCache()[thisModel] or 0
-    timerThresholdArmed = nil
-    resetSessionStats()
-    resetSessionEvidence()
-  end
-  local t = getTimer0()
-  if not t then return end
-  local secs = timerElapsedSeconds(t)
-  if secs == nil then return end
-  if timerThresholdArmed == nil then
-    timerThresholdArmed = (secs < minFlightDur)
-  end
-  if secs < minFlightDur then
-    timerThresholdArmed = true
-  elseif timerThresholdArmed then
-    timerThresholdArmed = false
-    local cache = getFlightCache()
-    local newCount = (cache[thisModel] or modelFlights or 0) + 1
-    cache[thisModel] = newCount
-    modelFlights = newCount
-    saveFlightCache()
-  end
-end
 local function updateStats()
   if not A.linkAvailable then return end
   local r = getHeadspeed()
@@ -1914,7 +1777,7 @@ local function serviceTelemetry(trackStats)
   if last and last >= 0 and now >= last and (now - last) < DATA_INTERVAL_TICKS then
     return false
   end
-  tickFlightCount()
+  MODULE.flightService:tick()
   tick(now)
   if trackStats then updateStats() end
   return true
@@ -1985,72 +1848,27 @@ end
 -- Retained LVGL object references. Static chrome is created once in update();
 -- refresh() only changes the handful of properties whose values moved.
 local V = {}
-local OBJECT_STATE = {}
-local function rememberObject(obj, properties)
-  local state = { visible=true }
-  for key, value in pairs(properties) do state[key] = value end
-  OBJECT_STATE[obj] = state
-  return obj
-end
 local function setObject(obj, properties)
-  if not obj then return end
-  local state = OBJECT_STATE[obj]
-  if not state then
-    state = {}
-    OBJECT_STATE[obj] = state
-  end
-  local changed = false
-  for key, value in pairs(properties) do
-    if state[key] ~= value then
-      state[key] = value
-      changed = true
-    end
-  end
-  if changed then obj:set(properties) end
+  MODULE.uiService:set(obj, properties)
 end
 local function setVisible(obj, visible)
-  if not obj then return end
-  local state = OBJECT_STATE[obj]
-  if not state then
-    state = {}
-    OBJECT_STATE[obj] = state
-  end
-  visible = not not visible
-  if state.visible == visible then return end
-  state.visible = visible
-  if visible then obj:show() else obj:hide() end
+  MODULE.uiService:visible(obj, visible)
 end
 local function setLabel(obj, text, color, x, y, w, font, align)
-  if not obj then return end
-  local p = { text = tostring(text or "") }
-  if color ~= nil then p.color = color end
-  if x ~= nil then p.x = x end
-  if y ~= nil then p.y = y end
-  if w ~= nil then p.w = w end
-  if font ~= nil then p.font = font end
-  if align ~= nil then p.align = align end
-  setObject(obj, p)
+  MODULE.uiService:setLabel(obj, text, color, x, y, w, font, align)
 end
 local function newLabel(x, y, w, text, font, color, align)
-  local properties = { x=x, y=y, w=w or 0, h=0, text=text or "",
-                       font=font or 0, color=color or C_TEXT, align=align or 0 }
-  return rememberObject(lvgl.label(properties), properties)
+  return MODULE.uiService:label(x, y, w or 0, text, font or 0,
+                                color or C_TEXT, align)
 end
 local function newRect(x, y, w, h, color, filled, rounded, thickness)
-  local properties = { x=x, y=y, w=w, h=h, color=color,
-                       filled=filled and 1 or 0, rounded=rounded or 0,
-                       thickness=thickness or 1 }
-  return rememberObject(lvgl.rectangle(properties), properties)
+  return MODULE.uiService:rect(x, y, w, h, color, filled, rounded, thickness)
 end
 local function newPanel(x, y, w, h, bg, border, rounded)
-  return {
-    fill = newRect(x, y, w, h, bg, true, rounded, 1),
-    border = newRect(x, y, w, h, border, false, rounded, 1),
-  }
+  return MODULE.uiService:panel(x, y, w, h, bg, border, rounded)
 end
 local function setPanel(panel, bg, border)
-  setObject(panel.fill, { color=bg })
-  setObject(panel.border, { color=border })
+  MODULE.uiService:setPanel(panel, bg, border)
 end
 
 local SIG_HEIGHTS = { 6, 10, 14, 18 }
@@ -2061,6 +1879,8 @@ local function buildTopBar()
   -- glyphs occupy the same top-bar baseline as the original dashboard.
   V.modelName = newLabel(L.top.x, y - 2, 260, "", SMLSIZE + BOLD, C_TEXT)
   V.timer = newLabel(W / 2 - 100, y - 9, 200, "", MIDSIZE + BOLD, C_TEXT, CENTERED)
+  V.armState = newLabel(W / 2 + 100, y - 3, 200, "", SMLSIZE + BOLD,
+                        C_TEXT, CENTERED)
   -- A compact vertical battery sits at the far right. Rotating the original
   -- glyph counter-clockwise puts its terminal on top and makes charge fill
   -- bottom-to-top. Signal quality occupies the space immediately to its left.
@@ -2293,9 +2113,28 @@ local function updateUiState()
     setVisible(V.txFill, false)
   end
 
-  local flightText = fmtFlights(getFlightCount())
-  if A.flightSaveError then flightText = flightText .. " · SAVE ERROR" end
-  setLabel(V.flightCount, flightText, A.flightSaveError and C_RED or C_TEXT)
+  local flightText = fmtFlights(MODULE.flightService:getCount())
+  local pidProfile = MODULE.statusService:getPidProfile()
+  if D.pidProfileValid then
+    flightText = flightText .. " · P" .. tostring(pidProfile)
+  end
+  local flightSaveError = MODULE.flightService:hasSaveError()
+  if flightSaveError then flightText = flightText .. " · SAVE ERROR" end
+  setLabel(V.flightCount, flightText, flightSaveError and C_RED or C_TEXT)
+  local arm = MODULE.statusService:getArmState()
+  local flagsText = MODULE.statusService:flagsText(
+                      MODULE.statusService:getArmingDisableFlags())
+  if flagsText ~= "" then
+    -- Disable flags have visual priority, matching DBK: they replace the arm
+    -- state in the same label instead of competing for top-bar space.
+    setLabel(V.armState, flagsText, C_RED)
+  elseif D.armValid then
+    local armed = arm == 1 or arm == 3
+    setLabel(V.armState, armed and "ARMED" or "DISARMED",
+             armed and C_YELLOW or C_RED)
+  else
+    setLabel(V.armState, "NO ARM TELE", C_DIM)
+  end
   local govState = getGovState()
   local govTheme = GOV_COLOR[govState] or GOV_FALLBACK
   setPanel(V.govPanel, govTheme.bg, govTheme.br)
@@ -2385,7 +2224,8 @@ local function buildUi()
   if not lvgl then return end
   lvgl.clear()
   V = {}
-  OBJECT_STATE = {}
+  if not MODULE.uiService then MODULE.uiService = MODULE.ui.new(lvgl, C_TEXT) end
+  MODULE.uiService:reset()
   if not OPT.bgTransparent then newRect(0, 0, W, H, C_BG, true, 0, 0) end
   buildTopBar()
   buildModelPanel()
@@ -2399,7 +2239,8 @@ local function buildUnsupportedUi()
   if not lvgl then return end
   lvgl.clear()
   V = {}
-  OBJECT_STATE = {}
+  if not MODULE.uiService then MODULE.uiService = MODULE.ui.new(lvgl, C_TEXT) end
+  MODULE.uiService:reset()
   newRect(0, 0, W, H, C_BG, true, 0, 0)
   newLabel(0, math.floor(H / 2) - 18, W,
            "StacyDashV4 requires an 800x480 full-screen layout",
@@ -2432,7 +2273,7 @@ local function create(zone, options)
     }
     L.bot.y = H - L.bot.padBot - L.bot.h
   end
-  loadModelFlights()
+  MODULE.flightService:load(true)
   applyOptions(options)
   -- Dashboard state is intentionally module-wide. The supported deployment is
   -- one full-screen instance on an 800x480 color radio.
@@ -2498,7 +2339,8 @@ end
 -- detects movement of the whole switch and validates it against Gov/Hspd or NR.
 -- Telemetry sensor sources are intentionally omitted: the widget auto-detects standard
 -- Rotorflight sensor names (Hspd, Tspd, Vbec, Vcel, Cel#, Curr, Capa, Bat%,
--- Tesc, Gov, Thr, BAT#, Vbat, and RQly). Nitro Rx pack voltage uses Vbec only.
+-- Tesc, Gov, Thr, ARM, ARMD, PID#, BAT#, Vbat, and RQly). Nitro Rx pack
+-- voltage uses Vbec only.
 -- OMPHOBBY uses NR, RxBt, Curr, Capa, Bat%, and Tmp; its cell count comes
 -- from M1/M2 in the model name, and it has no tail-RPM telemetry source.
 -- "Motor Switch" is a raw SOURCE so settings select the physical control (SG),
@@ -2516,6 +2358,7 @@ local options = {
   { "HeliType", CHOICE, 1, { "Electric", "Nitro", "OMPHOBBY" } },
   { "BattRsv", VALUE, 20, 0, 50 },
   { "BattVoice", BOOL, 0 },
+  { "DispLED", BOOL, 0 },
   { "RxPackMin", STRING, "6.60" },
   { "RxPackMax", STRING, "8.40" },
   { "MotorSw", SOURCE, 0 },
@@ -2526,6 +2369,7 @@ local OPTION_LABELS = {
   HeliType = "Heli Type",
   BattRsv  = "Batt Reserve %",
   BattVoice= "Battery Voice",
+  DispLED   = "Display LEDs",
   RxPackMin= "Rx Pack Minimum",
   RxPackMax= "Rx Pack Maximum",
   MotorSw  = "Motor Switch",
