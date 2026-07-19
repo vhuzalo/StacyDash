@@ -140,7 +140,7 @@ local TOPBAR_MIN_DUR_DEFAULT    = 60
 local S = {
   rpmMax = 0,
   currMax = 0, tempMax = 0,
-  becMin = nil, cellMin = nil,
+  becMin = nil, cellMin = nil, packMin = nil,
 }
 local D = {
   adjustedPercent = 0,
@@ -229,7 +229,7 @@ local A = {
   lastGovAudioState = nil,
   lastProfileAudioState = nil,
 }
-local HELI_ELECTRIC, HELI_NITRO, HELI_OMPHOBBY = 1, 2, 3
+local HELI_ELECTRIC, HELI_NITRO, HELI_OMPHOBBY, HELI_BETAFLIGHT = 1, 2, 3, 4
 local OPT = {
   heliType     = HELI_ELECTRIC,
   battBarMode   = 0,
@@ -377,10 +377,11 @@ local function applyOptions(opts)
     -- The Motor Switch is the only mapped source. Rotorflight Gov/Hspd or OMP
     -- NR telemetry validates what a movement means; other sensors auto-detect.
     SRC.motorSwitch = opts.MotorSw or opts["Motor Switch"] or 0
-    -- Heli Type CHOICE (1-based): Electric=1, Nitro=2, OMPHOBBY=3.
-    -- OMPHOBBY shares the percentage bar but has its own telemetry contract.
-    local bb = tonumber(opts.HeliType or opts["Heli Type"]) or 1
-    if bb < 1 or bb > 3 then bb = 1 end
+    -- Keep the persisted HeliType key and its first three indices stable.
+    -- Betaflight is appended as value 4 for backward-compatible model settings.
+    local bb = tonumber(opts.HeliType or opts["Aircraft Type"]
+                        or opts["Heli Type"]) or 1
+    if bb < 1 or bb > 4 then bb = 1 end
     OPT.heliType = bb
     OPT.battBarMode = (bb == HELI_NITRO) and 1 or 0
     OPT.reservePct  = tonumber(opts.BattRsv or opts["Batt Reserve %"]) or 0
@@ -508,9 +509,23 @@ local OMPHOBBY_SENSOR = {
   batteryPercent   = "Bat%",
   escTemperature   = "Tmp",
 }
+local BETAFLIGHT_SENSOR = {
+  -- CRSF/ELRS names published by Betaflight and discovered by EdgeTX. RxBt
+  -- must represent total pack voltage (report_cell_voltage=OFF).
+  packVoltage      = "RxBt",
+  current          = "Curr",
+  capacity         = "Capa",
+  batteryPercent   = "Bat%",
+}
 local function activeSensorName(key)
-  local sensors = OPT.heliType == HELI_OMPHOBBY
-                  and OMPHOBBY_SENSOR or ROTORFLIGHT_SENSOR
+  local sensors
+  if OPT.heliType == HELI_OMPHOBBY then
+    sensors = OMPHOBBY_SENSOR
+  elseif OPT.heliType == HELI_BETAFLIGHT then
+    sensors = BETAFLIGHT_SENSOR
+  else
+    sensors = ROTORFLIGHT_SENSOR
+  end
   return sensors[key]
 end
 local function getSensorNumber(key)
@@ -838,7 +853,7 @@ local function selectFlightBatteryPercent(heliType, sensorPercent, sensorValid,
                                           voltagePercent, hasCellVoltage,
                                           hasPackVoltage)
   local raw = tonumber(sensorPercent)
-  if heliType == HELI_ELECTRIC then
+  if heliType == HELI_ELECTRIC or heliType == HELI_BETAFLIGHT then
     local fcPercentUsable = sensorValid and raw ~= nil
                             and raw >= 0 and raw <= 100
                             and (raw > 0 or hasCellVoltage or hasPackVoltage)
@@ -1365,6 +1380,7 @@ local function statCurrMax() return S.currMax or 0 end
 local function statTempMax() return S.tempMax or 0 end
 local function statBecMin()  return S.becMin end
 local function statCellMin() return S.cellMin end
+local function statPackMin() return S.packMin end
 -- model.getTimer(0) shared per frame: the flight counter and top-bar clock both
 -- need it, so read it once. Returns the timer table, or false on failure.
 local function getTimer0()
@@ -1389,6 +1405,7 @@ local function resetSessionStats()
   S.tempMax = 0
   S.becMin  = nil
   S.cellMin = nil
+  S.packMin = nil
 end
 local function resetSessionEvidence()
   for key in pairs(RESOLVED) do RESOLVED[key] = nil end
@@ -1768,6 +1785,13 @@ local function updateStats()
   if D.becValid and (S.becMin == nil or b < S.becMin) then S.becMin = b end
   local mc = getCellVoltage()
   if mc and mc > 0 and (S.cellMin == nil or mc < S.cellMin) then S.cellMin = mc end
+  if OPT.heliType == HELI_BETAFLIGHT then
+    local pv = getPackVolt()
+    if D.packVoltageValid and pv > 0
+       and (S.packMin == nil or pv < S.packMin) then
+      S.packMin = pv
+    end
+  end
 end
 
 local DATA_INTERVAL_TICKS = 10 -- 10 Hz; telemetry and UI do not need frame-rate polling
@@ -1963,6 +1987,7 @@ local function buildTiles()
   local n = 4
   local w = math.floor((t.w - (n-1) * t.gap) / n)
   local becLabel = OPT.heliType == HELI_NITRO and "BATT" or "BEC"
+  local voltageLabel = OPT.heliType == HELI_BETAFLIGHT and "VBAT" or "CELL"
   newPanel(t.x, t.y, t.w, t.h, C_TILE, C_LINE, t.r)
   for i = 1, n - 1 do
     local dx = t.x + (w + t.gap) * i - math.floor(t.gap / 2)
@@ -1970,7 +1995,7 @@ local function buildTiles()
   end
   V.tiles = {
     buildTile(t.x,                         t.y, w, t.h, "AMPS",  "(A)"),
-    buildTile(t.x + (w + t.gap),          t.y, w, t.h, "CELL",  "(V)"),
+    buildTile(t.x + (w + t.gap),          t.y, w, t.h, voltageLabel, "(V)"),
     buildTile(t.x + (w + t.gap) * 2,      t.y, w, t.h, becLabel, "(V)"),
     buildTile(t.x + (w + t.gap) * 3,      t.y, w, t.h, "ESC T", "(°C)"),
   }
@@ -2048,7 +2073,9 @@ local function updateBottom()
   local usedText = D.capacityValid and string.format(" · %d mAh used", capa) or ""
   local prof = getBattProfile()
   local header
-  if not D.hasBattData and OPT.heliType == HELI_OMPHOBBY
+  if OPT.heliType == HELI_BETAFLIGHT and D.packVoltageValid then
+    header = string.format("BATTERY · %.1fV", volt) .. usedText
+  elseif not D.hasBattData and OPT.heliType == HELI_OMPHOBBY
      and getCellCount() == 0 then
     header = "BATTERY · ADD M1 OR M2 TO MODEL NAME"
   elseif not D.hasBattData then
@@ -2176,18 +2203,28 @@ local function updateUiState()
       setLabel(V.tiles[1].value, "--", C_DIM, nil, nil, nil, nil, CENTERED)
       setLabel(V.tiles[1].footer, "", C_DIM)
     end
-    local cell = getCellVoltage()
-    local cellMin = statCellMin()
-    if cell > 0 then
-      setLabel(V.tiles[2].value, string.format("%.2f", cell),
-               cellVoltageColor(cellMin), nil, nil, nil, nil, 0)
+    local cell = OPT.heliType == HELI_BETAFLIGHT and getPackVolt()
+                 or getCellVoltage()
+    local cellMin = OPT.heliType == HELI_BETAFLIGHT and statPackMin()
+                    or statCellMin()
+    local voltageValid = OPT.heliType == HELI_BETAFLIGHT
+                         and D.packVoltageValid or D.cellVoltageValid
+    if voltageValid and cell > 0 then
+      local format = OPT.heliType == HELI_BETAFLIGHT and "%.1f" or "%.2f"
+      local color = OPT.heliType == HELI_BETAFLIGHT and C_TEXT
+                    or cellVoltageColor(cellMin)
+      setLabel(V.tiles[2].value, string.format(format, cell),
+               color, nil, nil, nil, nil, 0)
     else
       setLabel(V.tiles[2].value, "--", C_DIM,
                nil, nil, nil, nil, CENTERED)
     end
     setLabel(V.tiles[2].footer,
-             D.cellVoltageValid and cellMin
-               and fmtNum("cellMin", "min %.2f", cellMin) or "min --", C_DIM)
+             voltageValid and cellMin
+               and (OPT.heliType == HELI_BETAFLIGHT
+                    and fmtNum("packMin", "min %.1f", cellMin)
+                    or fmtNum("cellMin", "min %.2f", cellMin))
+               or "min --", C_DIM)
   end
   local bec = getBec()
   local becColor = C_TEXT
@@ -2343,6 +2380,7 @@ end
 -- voltage uses Vbec only.
 -- OMPHOBBY uses NR, RxBt, Curr, Capa, Bat%, and Tmp; its cell count comes
 -- from M1/M2 in the model name, and it has no tail-RPM telemetry source.
+-- Betaflight CRSF/ELRS uses RxBt, Curr, Capa, and Bat%; RxBt is total VBAT.
 -- "Motor Switch" is a raw SOURCE so settings select the physical control (SG),
 -- not one of its individual position conditions (SG up/middle/down). A movement
 -- suppresses Electric/OMPHOBBY flight-pack alerts only after current aircraft
@@ -2355,7 +2393,7 @@ local options = {
                              "Reef", "Royal", "Moss", "Ember", "Miami" } },
   { "TxBatt",   CHOICE, 1, { "LiPo", "Li-Ion" } },
   { "MinFlight", VALUE, TOPBAR_MIN_DUR_DEFAULT, -30, 120 },
-  { "HeliType", CHOICE, 1, { "Electric", "Nitro", "OMPHOBBY" } },
+  { "HeliType", CHOICE, 1, { "Electric", "Nitro", "OMPHOBBY", "Betaflight" } },
   { "BattRsv", VALUE, 20, 0, 50 },
   { "BattVoice", BOOL, 0 },
   { "DispLED", BOOL, 0 },
@@ -2366,7 +2404,7 @@ local options = {
 local OPTION_LABELS = {
   TxBatt   = "TX Battery",
   MinFlight= "Min. Flight Time (sec)",
-  HeliType = "Heli Type",
+  HeliType = "Aircraft Type",
   BattRsv  = "Batt Reserve %",
   BattVoice= "Battery Voice",
   DispLED   = "Display LEDs",

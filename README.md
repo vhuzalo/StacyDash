@@ -1,8 +1,8 @@
 # StacyDash V4
 
-Dashboard leve e direto para helicópteros no EdgeTX. O StacyDash reúne, em uma única tela, as informações essenciais de voo e telemetria sem a complexidade de uma interface mais carregada.
+Dashboard leve e direto para modelos no EdgeTX. O StacyDash reúne, em uma única tela, as informações essenciais de voo e telemetria sem a complexidade de uma interface mais carregada.
 
-O widget foi feito para rádios coloridos com tela **800 × 480** e utiliza a interface LVGL do EdgeTX. Ele oferece perfis específicos para helicópteros elétricos, nitro e modelos OMPHOBBY.
+O widget foi feito para rádios coloridos com tela **800 × 480** e utiliza a interface LVGL do EdgeTX. Ele oferece perfis específicos para helicópteros elétricos, nitro, modelos OMPHOBBY e drones Betaflight com CRSF/ExpressLRS.
 
 **Download da versão mais recente:** [GitHub Releases](https://github.com/vhuzalo/StacyDash/releases/latest)
 
@@ -102,6 +102,19 @@ Os receptores OMPHOBBY não fornecem a contagem de células usada pelo widget. O
 
 Sem `M1` ou `M2` no nome, a tensão por célula e a barra de bateria não podem ser calculadas. O perfil OMPHOBBY não possui fonte para RPM de cauda, tensão de BEC ou estado do governor; esses campos aparecem sem dados.
 
+### Betaflight — CRSF/ExpressLRS
+
+| Sensor | Informação exibida ou uso |
+| --- | --- |
+| `RxBt` | tensão total do pack e mínimo da sessão |
+| `Curr` | corrente e máximo da sessão |
+| `Capa` | capacidade consumida em mAh |
+| `Bat%` | percentual da bateria, barra e alertas |
+
+O perfil Betaflight assume o contrato CRSF/ExpressLRS e mantém o layout dos demais perfis. O tile `CELL` passa a ser `VBAT`; headspeed, RPM de cauda, governor, BEC, temperatura do ESC, arm e perfil PID permanecem sem dados porque não fazem parte deste perfil básico.
+
+Configure `report_cell_voltage=OFF` no Betaflight para que `RxBt` represente a tensão total do pack. A barra e os alertas dependem de `Bat%`, portanto configure corretamente a capacidade da bateria (`bat_capacity`) e a medição de corrente na controladora. Se `Bat%` não estiver disponível, o dashboard ainda mostra tensão, corrente e consumo, mas deixa a barra como `NO DATA` e não estima o percentual pela tensão.
+
 ### Link e transmissor
 
 - Qualidade do link: tenta, nesta ordem, `RQly`, `RQLY` e `LQ`; se nenhum existir, usa `RSSI`/`getRSSI()`.
@@ -145,7 +158,7 @@ Depois:
 1. Reinicie o rádio ou recarregue os scripts Lua.
 2. Crie uma tela de telemetria de página inteira.
 3. Adicione o widget `StacyDashV4`.
-4. Selecione o tipo correto em **Heli Type**.
+4. Selecione o tipo correto em **Aircraft Type**.
 5. Configure **Motor Switch** com o controle físico usado para ligar/desligar o motor.
 
 O layout exige uma tela 800 × 480 e uma zona praticamente cheia (mínimo de 760 × 420). Em outra resolução, o widget exibe uma mensagem de incompatibilidade.
@@ -201,7 +214,7 @@ O workflow pode ser executado manualmente na aba **Actions** para testar e baixa
 | **Theme** | tema de cores ou fundo transparente | Dark |
 | **TX Battery** | química da bateria 2S do transmissor | LiPo |
 | **Min. Flight Time (sec)** | duração mínima para registrar um voo | 60 s |
-| **Heli Type** | Electric, Nitro ou OMPHOBBY | Electric |
+| **Aircraft Type** | Electric, Nitro, OMPHOBBY ou Betaflight | Electric |
 | **Batt Reserve %** | reserva removida da escala útil da bateria | 20% |
 | **Battery Voice** | ativa anúncios de bateria | desligado |
 | **Display LEDs** | ativa o controle dos LEDs RGB do rádio | desligado |
@@ -215,6 +228,8 @@ Escolha a chave física completa, por exemplo `SG`, e não uma condição de pos
 
 - Rotorflight: pelos estados reconhecidos de `Gov` ou por `Hspd` igual a zero;
 - OMPHOBBY: por `NR` igual a zero.
+
+No perfil Betaflight não há RPM/governor no contrato básico para comprovar que os motores pararam. Por segurança, mover a chave não pausa preventivamente os alertas percentuais; ela continua podendo reconhecer e encerrar as repetições de `dead.wav` depois que o aviso crítico começar.
 
 Essa validação evita que um simples movimento de chave silencie um alerta com o motor ainda em funcionamento. Depois que o aviso crítico `dead.wav` começa, mover a chave também reconhece e encerra suas repetições.
 
