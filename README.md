@@ -4,6 +4,8 @@ Dashboard leve e direto para helicópteros no EdgeTX. O StacyDash reúne, em uma
 
 O widget foi feito para rádios coloridos com tela **800 × 480** e utiliza a interface LVGL do EdgeTX. Ele oferece perfis específicos para helicópteros elétricos, nitro e modelos OMPHOBBY.
 
+**Download da versão mais recente:** [GitHub Releases](https://github.com/vhuzalo/StacyDash/releases/latest)
+
 > **Aviso de segurança:** use por sua conta e risco. O StacyDash apenas lê e exibe a telemetria; ele não envia comandos MSP nem altera a controladora de voo. A única gravação feita pelo widget é o contador de voos em `/flights-count.csv`. Não use o dashboard como substituto para alarmes e verificações de segurança configurados no rádio, ESC ou flight controller.
 
 ## Funcionalidades
