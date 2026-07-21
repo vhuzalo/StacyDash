@@ -51,6 +51,7 @@ required_files=(
   "WIDGETS/StacyDashV4/themes.lua"
   "WIDGETS/StacyDashV4/ui.lua"
   "WIDGETS/StacyDashV4/leds.lua"
+  "WIDGETS/StacyDashV4/elrs.lua"
   "WIDGETS/StacyDashV4/default.png"
   "flights-count.csv"
 )

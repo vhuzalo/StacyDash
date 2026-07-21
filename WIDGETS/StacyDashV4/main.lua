@@ -63,6 +63,7 @@ MODULE.status = MODULE.load("status")
 MODULE.themes = MODULE.load("themes")
 MODULE.ui = MODULE.load("ui")
 MODULE.leds = MODULE.load("leds")
+MODULE.elrs = MODULE.load("elrs")
 local GOV_COLOR = {}
 local GOV_FALLBACK = {}
 local themeAccent = nil
@@ -224,6 +225,8 @@ local A = {
   rxDeadVoiceNextTick    = 0,
   escTempHighSince       = nil,
   becLowSince            = nil,
+  elrsSwitchLastPosition = nil,
+  elrsViewTogglePending  = false,
   lastDataTick = -1,
   lastArmAudioState = nil,
   lastGovAudioState = nil,
@@ -374,9 +377,10 @@ local function applyOptions(opts)
   if rawDur < 1 then rawDur = 1 end
   if MODULE.flightService then MODULE.flightService:setMinimum(rawDur) end
   if opts then
-    -- The Motor Switch is the only mapped source. Rotorflight Gov/Hspd or OMP
-    -- NR telemetry validates what a movement means; other sensors auto-detect.
+    -- Motor and ELRS-screen switches are the only mapped sources; telemetry
+    -- sensors themselves remain auto-detected.
     SRC.motorSwitch = opts.MotorSw or opts["Motor Switch"] or 0
+    SRC.elrsSwitch = opts.ElrsSw or opts["ELRS Screen Switch"] or 0
     -- Keep the persisted HeliType key and its first three indices stable.
     -- Betaflight is appended as value 4 for backward-compatible model settings.
     local bb = tonumber(opts.HeliType or opts["Aircraft Type"]
@@ -1243,6 +1247,7 @@ local function tick(nowT)
   nowT = nowT or frameNow()
   A.lastDataTick = nowT
   local rq = getRqly()
+  if MODULE.elrsService then MODULE.elrsService:sample() end
   local linkReported = rq and rq > 0 or false
   A.linkAvailable = false
   -- Read the whole physical Motor Switch as a raw source (-1024/0/+1024 for a
@@ -1270,6 +1275,25 @@ local function tick(nowT)
     A.motorSwitchPosition = -1
   else
     A.motorSwitchPosition = 0
+  end
+  -- The diagnostics switch is intentionally edge-triggered: every physical
+  -- position change alternates views, so both two- and three-position switches
+  -- work without an extra direction option. The first sample only initializes.
+  local rawElrsPosition = getValSrc(SRC.elrsSwitch)
+  local elrsPosition
+  if rawElrsPosition ~= nil then
+    if rawElrsPosition > 0 then elrsPosition = 1
+    elseif rawElrsPosition < 0 then elrsPosition = -1
+    else elrsPosition = 0 end
+  end
+  if elrsPosition ~= nil then
+    if A.elrsSwitchLastPosition ~= nil
+       and elrsPosition ~= A.elrsSwitchLastPosition then
+      A.elrsViewTogglePending = true
+    end
+    A.elrsSwitchLastPosition = elrsPosition
+  else
+    A.elrsSwitchLastPosition = nil
   end
   local volt  = getPackVolt()
   local cells = getCellCount()
@@ -1406,6 +1430,9 @@ local function getTimer1Secs()
   F.timerSecs = v
   return v
 end
+MODULE.elrsService = MODULE.elrs.new({
+  getNamed = function(name) return get(name) end,
+})
 local function resetSessionStats()
   S.rpmMax  = 0
   S.currMax = 0
@@ -1413,6 +1440,7 @@ local function resetSessionStats()
   S.becMin  = nil
   S.cellMin = nil
   S.packMin = nil
+  MODULE.elrsService:reset()
 end
 local function resetSessionEvidence()
   for key in pairs(RESOLVED) do RESOLVED[key] = nil end
@@ -1448,6 +1476,8 @@ local function resetSessionEvidence()
   A.lastGovAudioState = nil
   A.lastProfileAudioState = nil
   A.motorSwitchLastPosition = nil
+  A.elrsSwitchLastPosition = nil
+  A.elrsViewTogglePending = false
   A.motorPausedPosition = nil
   A.motorGateCandidateFrom = nil
   A.motorGateCandidateTo = nil
@@ -1931,6 +1961,18 @@ local function buildTopBar()
   local battX = W - L.top.x - battW
   local battY = centerY - totalBattH / 2 + terminalH + 1
   local sigX = battX - 14 - 36
+  -- LVGL controls receive touch directly. refresh(event, touchState) is kept
+  -- as a compatibility fallback, but useLvgl widgets may have their touch
+  -- consumed by LVGL before refresh sees it.
+  if type(lvgl.button) == "function" then
+    pcall(lvgl.button, {
+      x=sigX - 12, y=y - 8, w=56, h=h + 16, text="",
+      color=C_BG, textColor=C_TEXT, cornerRadius=4,
+      press=function()
+        if MODULE.openElrs then MODULE.openElrs() end
+      end,
+    })
+  end
   V.signal = {}
   for i, bh in ipairs(SIG_HEIGHTS) do
     V.signal[i] = newRect(sigX + (i-1) * 10, centerY + 10 - bh, 6, bh,
@@ -2130,7 +2172,7 @@ local function updateBottom()
   end
 end
 
-local function updateUiState()
+local function updateSharedTopBar()
   if not V.modelName then return end
   local modelName = getModelName()
   setLabel(V.modelName, modelName, C_TEXT)
@@ -2157,14 +2199,6 @@ local function updateUiState()
     setVisible(V.txFill, false)
   end
 
-  local flightText = fmtFlights(MODULE.flightService:getCount())
-  local pidProfile = MODULE.statusService:getPidProfile()
-  if D.pidProfileValid then
-    flightText = flightText .. " · P" .. tostring(pidProfile)
-  end
-  local flightSaveError = MODULE.flightService:hasSaveError()
-  if flightSaveError then flightText = flightText .. " · SAVE ERROR" end
-  setLabel(V.flightCount, flightText, flightSaveError and C_RED or C_TEXT)
   local arm = MODULE.statusService:getArmState()
   local flagsText = MODULE.statusService:flagsText(
                       MODULE.statusService:getArmingDisableFlags())
@@ -2179,6 +2213,19 @@ local function updateUiState()
   else
     setLabel(V.armState, "NO ARM TELE", C_DIM)
   end
+end
+
+local function updateUiState()
+  if not V.modelName then return end
+  updateSharedTopBar()
+  local flightText = fmtFlights(MODULE.flightService:getCount())
+  local pidProfile = MODULE.statusService:getPidProfile()
+  if D.pidProfileValid then
+    flightText = flightText .. " · P" .. tostring(pidProfile)
+  end
+  local flightSaveError = MODULE.flightService:hasSaveError()
+  if flightSaveError then flightText = flightText .. " · SAVE ERROR" end
+  setLabel(V.flightCount, flightText, flightSaveError and C_RED or C_TEXT)
   local govState = getGovState()
   local govTheme = GOV_COLOR[govState] or GOV_FALLBACK
   setPanel(V.govPanel, govTheme.bg, govTheme.br)
@@ -2289,6 +2336,42 @@ local function buildUi()
   buildBottom()
   updateUiState()
 end
+local function buildElrsUi()
+  if not lvgl then return end
+  if not MODULE.uiService then MODULE.uiService = MODULE.ui.new(lvgl, C_TEXT) end
+  V = {}
+  MODULE.elrsService:build({
+    lvgl=lvgl, ui=MODULE.uiService, w=W, h=H,
+    transparent=OPT.bgTransparent,
+    colors={ bg=C_BG, text=C_TEXT, dim=C_DIM, line=C_LINE, tile=C_TILE,
+             accent=C_ACCENT, green=C_GREEN, yellow=C_YELLOW, red=C_RED },
+    fonts={ small=SMLSIZE, smallBold=SMLSIZE+BOLD, midBold=MIDSIZE+BOLD,
+            doubleBold=DBLSIZE+BOLD, center=CENTERED, right=RIGHT },
+    buildTopBar=buildTopBar,
+  })
+  updateSharedTopBar()
+end
+local function buildActiveUi()
+  if MODULE.activeView == "elrs" then buildElrsUi() else buildUi() end
+end
+local function updateActiveUi()
+  if MODULE.activeView == "elrs" then
+    MODULE.elrsService:updateUi()
+    updateSharedTopBar()
+  else
+    updateUiState()
+  end
+end
+MODULE.openElrs = function()
+  if MODULE.activeView == "elrs" then return end
+  MODULE.activeView = "elrs"
+  buildElrsUi()
+end
+MODULE.closeElrs = function()
+  if MODULE.activeView ~= "elrs" then return end
+  MODULE.activeView = "dashboard"
+  buildUi()
+end
 local function buildUnsupportedUi()
   if not lvgl then return end
   lvgl.clear()
@@ -2303,8 +2386,31 @@ end
 
 local function refresh(widget, event, touchState)
   if not widget.supported then return end
+  -- update() may run while the widget is still embedded, where EdgeTX rejects
+  -- fullscreen-only LVGL controls such as buttons. Rebuild once after refresh
+  -- starts receiving a non-nil event (0 included), which is EdgeTX's signal
+  -- that this widget is now genuinely in interactive fullscreen mode.
+  if event ~= nil and not widget.interactiveFullscreen then
+    widget.interactiveFullscreen = true
+    buildActiveUi()
+  end
+  local tap = rawget(_G, "EVT_TOUCH_TAP") or _G.EVT_TOUCH_TAP
+  if tap and event == tap and touchState then
+    local x, y = tonumber(touchState.x), tonumber(touchState.y)
+    if x and y then
+      if MODULE.activeView ~= "elrs" and x >= 700 and x <= 766 and y >= 0 and y <= 52 then
+        MODULE.openElrs()
+      end
+    end
+  end
   clearFrameCache()
-  if serviceTelemetry(true) then updateUiState() end
+  local serviced = serviceTelemetry(true)
+  if A.elrsViewTogglePending then
+    A.elrsViewTogglePending = false
+    if MODULE.activeView == "elrs" then MODULE.closeElrs() else MODULE.openElrs() end
+  elseif serviced then
+    updateActiveUi()
+  end
 end
 local function background(widget)
   if not widget.supported then return end
@@ -2328,6 +2434,8 @@ local function create(zone, options)
     L.bot.y = H - L.bot.padBot - L.bot.h
   end
   MODULE.flightService:load(true)
+  MODULE.elrsService:reset()
+  MODULE.activeView = "dashboard"
   applyOptions(options)
   -- Dashboard state is intentionally module-wide. The supported deployment is
   -- one full-screen instance on an 800x480 color radio.
@@ -2336,6 +2444,7 @@ local function create(zone, options)
   return {
     zone = zone,
     options = options,
+    interactiveFullscreen = false,
     supported = W == SUPPORTED_LCD_W and H == SUPPORTED_LCD_H
                 and zoneW >= 760 and zoneH >= 420,
   }
@@ -2348,6 +2457,7 @@ local function update(widget, options)
   local previousRxMax = OPT.rxPackMax
   local previousRxValid = OPT.rxPackValid
   local previousMotorSource = SRC.motorSwitch
+  local previousElrsSource = SRC.elrsSwitch
   applyOptions(options)
   local heliChanged = previousHeliType ~= OPT.heliType
   local reserveChanged = previousReserve ~= OPT.reservePct
@@ -2355,6 +2465,7 @@ local function update(widget, options)
                             or previousRxMax ~= OPT.rxPackMax
                             or previousRxValid ~= OPT.rxPackValid
   local motorChanged = previousMotorSource ~= SRC.motorSwitch
+  local elrsSwitchChanged = previousElrsSource ~= SRC.elrsSwitch
 
   if heliChanged then
     resetSessionStats()
@@ -2379,6 +2490,10 @@ local function update(widget, options)
       A.rxDeadVoiceStartPosition = nil
     end
   end
+  if elrsSwitchChanged then
+    A.elrsSwitchLastPosition = nil
+    A.elrsViewTogglePending = false
+  end
   if heliChanged or reserveChanged then D.hasBattData = false end
   if heliChanged or rxSettingsChanged then
     D.rxVoltage = nil
@@ -2387,7 +2502,7 @@ local function update(widget, options)
   end
   A.lastDataTick = -1
   clearFrameCache()
-  if widget.supported then buildUi() else buildUnsupportedUi() end
+  if widget.supported then buildActiveUi() else buildUnsupportedUi() end
 end
 -- The reverse-switch setting is unnecessary: the widget
 -- detects movement of the whole switch and validates it against Gov/Hspd or NR.
@@ -2403,6 +2518,7 @@ end
 -- suppresses Electric/OMPHOBBY flight-pack alerts only after current aircraft
 -- telemetry corroborates a stopped state; missing evidence fails loud. After
 -- the first dead.wav playback, movement separately acknowledges only repeats.
+-- "ELRS Screen Switch" toggles the diagnostics view on every position change.
 local options = {
   { "Theme",    CHOICE, 1, { "Dark", "Light", "Transparent",
                              "Orange", "Red", "Yellow", "Blue", "Pink",
@@ -2417,6 +2533,7 @@ local options = {
   { "RxPackMin", STRING, "6.60" },
   { "RxPackMax", STRING, "8.40" },
   { "MotorSw", SOURCE, 0 },
+  { "ElrsSw",  SOURCE, 0 },
 }
 local OPTION_LABELS = {
   TxBatt   = "TX Battery",
@@ -2428,6 +2545,7 @@ local OPTION_LABELS = {
   RxPackMin= "Rx Pack Minimum",
   RxPackMax= "Rx Pack Maximum",
   MotorSw  = "Motor Switch",
+  ElrsSw   = "ELRS Screen Switch",
 }
 local function translate(name, language)
   return OPTION_LABELS[name] or name

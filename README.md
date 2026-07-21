@@ -24,6 +24,7 @@ O widget foi feito para rádios coloridos com tela **800 × 480** e utiliza a in
 - detecção automática de LiPo/LiHV pela tensão por célula;
 - perfil de bateria do Rotorflight (`BAT#`);
 - qualidade do link e nível da bateria do transmissor;
+- tela interna de diagnóstico ExpressLRS com uplink, downlink e extremos da sessão;
 - imagem personalizada e nome do modelo;
 - contador de voos separado por modelo;
 - alertas por voz e vibração para a bateria;
@@ -126,6 +127,36 @@ Configure `report_cell_voltage=OFF` no Betaflight para que `RxBt` represente a t
 - Qualidade do link: tenta, nesta ordem, `RQly`, `RQLY` e `LQ`; se nenhum existir, usa `RSSI`/`getRSSI()`.
 - Bateria do rádio: usa a fonte interna `tx-voltage`. Nas opções do widget, selecione se o pack do transmissor é LiPo ou Li-Ion para ajustar a escala do indicador.
 
+### Diagnóstico ExpressLRS
+
+Configure **ELRS Screen Switch** nas opções do widget e mova a chave escolhida
+para alternar entre o dashboard de voo e a tela interna de diagnóstico
+ExpressLRS. Em firmwares que entregam interação LVGL ao widget, também é
+possível tocar no indicador de sinal para abrir o diagnóstico; o retorno é
+feito pela chave configurada.
+A tela está disponível nos quatro perfis de aeronave e continua coletando os
+extremos da sessão quando não está visível.
+
+A barra superior é a mesma nas duas telas e mantém nome do modelo, timer,
+estado de arm ou flags, qualidade do sinal e bateria do transmissor.
+
+| Sensor | Informação exibida |
+| --- | --- |
+| `RQly` / `RQLY` / `LQ` | qualidade do uplink atual e mínima |
+| `1RSS` e `2RSS` | RSSI das antenas do receptor e mínimos |
+| `RSNR` | relação sinal/ruído do uplink e mínima |
+| `RFMD` | índice do modo RF recebido, sem converter entre tabelas de versões diferentes |
+| `TPWR` | potência de transmissão atual e máxima; o valor CRSF `0` é mostrado como `50 mW` |
+| `ANT` | antena ativa, apresentada como `A1` ou `A2` |
+| `TQly` / `TQLY` | qualidade do downlink atual e mínima |
+| `TRSS` | RSSI do downlink e mínimo |
+| `TSNR` | relação sinal/ruído do downlink e mínima |
+
+Sensores não descobertos, fora da faixa válida ou sem amostra atual aparecem
+como `--`. O histórico é reiniciado ao trocar de modelo, alterar o tipo de
+aeronave ou recarregar o widget. Essa tela é apenas informativa: ela não envia
+comandos nem altera configurações do módulo ou receptor.
+
 ## Instalação
 
 Copie o conteúdo desta pasta para a raiz do cartão SD do rádio, preservando esta estrutura:
@@ -142,6 +173,7 @@ Copie o conteúdo desta pasta para a raiz do cartão SD do rádio, preservando e
         ├── themes.lua
         ├── ui.lua
         ├── leds.lua
+        ├── elrs.lua
         ├── default.png
         ├── audio/
         │   ├── armed.wav
@@ -181,6 +213,7 @@ O widget é dividido em módulos carregados uma única vez na inicialização:
 | `themes.lua` | nomes e paletas dos temas |
 | `ui.lua` | criação, cache e atualização eficiente das primitivas LVGL |
 | `leds.lua` | animações e cores dos LEDs RGB conforme arm e disable flags |
+| `elrs.lua` | sensores, extremos e interface da tela de diagnóstico ExpressLRS |
 
 Essa separação reduz a quantidade de variáveis locais no módulo principal — limitada a 200 pelo Lua do EdgeTX — e permite acrescentar funcionalidades sem concentrar toda a implementação em `main.lua`.
 
@@ -227,6 +260,7 @@ O workflow pode ser executado manualmente na aba **Actions** para testar e baixa
 | **Rx Pack Minimum** | tensão considerada vazia no perfil Nitro | 6,60 V |
 | **Rx Pack Maximum** | tensão considerada cheia no perfil Nitro | 8,40 V |
 | **Motor Switch** | chave física do motor | não definida |
+| **ELRS Screen Switch** | chave física que alterna entre dashboard e diagnóstico ExpressLRS | não definida |
 
 ### Motor Switch
 
@@ -238,6 +272,13 @@ Escolha a chave física completa, por exemplo `SG`, e não uma condição de pos
 No perfil Betaflight não há RPM/governor no contrato básico para comprovar que os motores pararam. Por segurança, mover a chave não pausa preventivamente os alertas percentuais; ela continua podendo reconhecer e encerrar as repetições de `dead.wav` depois que o aviso crítico começar.
 
 Essa validação evita que um simples movimento de chave silencie um alerta com o motor ainda em funcionamento. Depois que o aviso crítico `dead.wav` começa, mover a chave também reconhece e encerra suas repetições.
+
+### ELRS Screen Switch
+
+Selecione uma chave física completa, como `SH`. O primeiro valor apenas
+inicializa o estado; depois disso, cada mudança de posição alterna a tela. Esse
+comportamento funciona tanto com chaves de duas posições quanto com chaves de
+três posições e não depende do suporte a touch do firmware.
 
 ## Alertas
 
