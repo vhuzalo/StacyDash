@@ -41,6 +41,12 @@ O dashboard continua funcionando parcialmente quando sensores opcionais não est
 
 ### Rotorflight — perfis Electric e Nitro
 
+Para configurar corretamente os sensores de telemetria no Rotorflight, execute o seguinte comando no CLI:
+
+```text
+set telemetry_sensors = 3,4,5,6,7,8,43,50,60,88,90,91,99,95,96,15,93,61,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+```
+
 | Sensor | Informação exibida ou uso |
 | --- | --- |
 | `Hspd` | headspeed, máximo da sessão e validação do estado do motor |
