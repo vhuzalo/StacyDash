@@ -283,7 +283,7 @@ Coloque uma imagem PNG ou BMP em `/IMAGES` usando exatamente o nome do modelo co
 /IMAGES/Nimbus 550 V2.png
 ```
 
-Se não houver uma imagem correspondente, o widget usa `/WIDGETS/StacyDashV4/default.png`. Caracteres inválidos em nomes de arquivo (`\ / : * ? " < > |`) são substituídos por `_` ao procurar a imagem.
+Se não houver uma imagem correspondente ao nome, o widget tenta a imagem selecionada nas configurações do modelo no EdgeTX. Se ela também não estiver disponível, usa `/WIDGETS/StacyDashV4/default.png`. Caracteres inválidos em nomes de arquivo (`\ / : * ? " < > |`) são substituídos por `_` ao procurar a imagem.
 
 ## Observações
 

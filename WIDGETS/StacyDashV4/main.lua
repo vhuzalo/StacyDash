@@ -410,7 +410,7 @@ local function applyOptions(opts)
   end
   C_ACCENT = themeAccent or DEFAULT_ACCENT
 end
-local modelImageName = nil
+local modelImageKey = nil
 local modelImagePath = nil
 local function trim(s) return string.match(s or "", "^%s*(.-)%s*$") end
 local function sanitizeFsName(name)
@@ -462,11 +462,18 @@ local function get(name)
   if type(v) == "table" then v = v.value end
   return v, true, true, true
 end
+local function getModelInfo()
+  local info = F.modelInfo
+  if info ~= nil then return info end
+  local ok, value = pcall(model.getInfo)
+  info = (ok and type(value) == "table") and value or {}
+  F.modelInfo = info
+  return info
+end
 local function getModelName()
   local v = F.modelName
   if v ~= nil then return v end
-  local ok, info = pcall(model.getInfo)
-  local n = (ok and info and info.name) or nil
+  local n = getModelInfo().name
   if not n or n == "" then n = "MODEL" end
   v = (string.gsub(n, ",", " "))
   F.modelName = v
@@ -1814,7 +1821,11 @@ local function fileExists(path)
 end
 local function resolveModelImagePath()
   local name = getModelName()
-  if modelImageName == name then return modelImagePath end
+  local configured = getModelInfo().bitmap
+  if type(configured) ~= "string" then configured = "" end
+  configured = trim(configured)
+  local cacheKey = name .. "\0" .. configured
+  if modelImageKey == cacheKey then return modelImagePath end
   local sanitized = sanitizeFsName(name)
   if not sanitized or sanitized == "" then sanitized = "MODEL" end
   -- Never concatenate raw model text into an SD-card path. The sanitized name
@@ -1822,8 +1833,14 @@ local function resolveModelImagePath()
   local candidates = {
     "/IMAGES/" .. sanitized .. ".png",
     "/IMAGES/" .. sanitized .. ".bmp",
-    "/WIDGETS/StacyDashV4/default.png",
   }
+  -- model.getInfo().bitmap is the picture selected in Model Setup. It is only
+  -- consulted when no file named after the model exists.
+  local configuredName = sanitizeFsName(configured)
+  if configuredName and configuredName ~= "" then
+    candidates[#candidates+1] = "/IMAGES/" .. configuredName
+  end
+  candidates[#candidates+1] = "/WIDGETS/StacyDashV4/default.png"
   candidates[#candidates+1] = "/IMAGES/default.png"
   candidates[#candidates+1] = "/IMAGES/defaultmodel.png"
   candidates[#candidates+1] = "/WIDGETS/StacyDashV4/Rotorflight.png"
@@ -1831,7 +1848,7 @@ local function resolveModelImagePath()
   for _, path in ipairs(candidates) do
     if fileExists(path) then modelImagePath = path; break end
   end
-  modelImageName = name
+  modelImageKey = cacheKey
   return modelImagePath
 end
 
