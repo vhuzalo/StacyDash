@@ -248,6 +248,9 @@ local OPT = {
   battBarMode   = 0,
   reservePct    = 0,
   battVoice     = false,
+  armVoice      = false,
+  govVoice      = false,
+  profileVoice  = false,
   displayLeds   = false,
   armLedColor   = { 0, 80, 255 },
   disarmLedColor= { 255, 0, 0 },
@@ -412,6 +415,9 @@ local function applyOptions(opts)
     if OPT.reservePct < 0 then OPT.reservePct = 0 end
     if OPT.reservePct > 50 then OPT.reservePct = 50 end
     OPT.battVoice   = (opts.BattVoice == 1 or opts.BattVoice == true)
+    OPT.armVoice    = (opts.ArmVoice == 1 or opts.ArmVoice == true)
+    OPT.govVoice    = (opts.GovVoice == 1 or opts.GovVoice == true)
+    OPT.profileVoice= (opts.PIDVoice == 1 or opts.PIDVoice == true)
     OPT.displayLeds = (opts.DispLED == 1 or opts.DispLED == true)
     OPT.armLedColor = ledColor(opts.ArmLED, 3)
     OPT.disarmLedColor = ledColor(opts.DisarmLED, 1)
@@ -796,6 +802,9 @@ MODULE.statusService = MODULE.status.new({
   getNamed = function(name) return get(name) end,
   getGovState = getGovState,
   getHeliType = function() return OPT.heliType end,
+  armVoiceEnabled = function() return OPT.armVoice end,
+  govVoiceEnabled = function() return OPT.govVoice end,
+  profileVoiceEnabled = function() return OPT.profileVoice end,
   ompType = HELI_OMPHOBBY,
 })
 local function getTxVolt()
@@ -2551,6 +2560,9 @@ local options = {
   { "HeliType", CHOICE, 1, { "Electric", "Nitro", "OMPHOBBY", "Betaflight" } },
   { "BattRsv", VALUE, 20, 0, 50 },
   { "BattVoice", BOOL, 0 },
+  { "ArmVoice", BOOL, 0 },
+  { "GovVoice", BOOL, 0 },
+  { "PIDVoice", BOOL, 0 },
   { "DispLED", BOOL, 0 },
   { "ArmLED", CHOICE, 3, LED_COLOR_NAMES },
   { "DisarmLED", CHOICE, 1, LED_COLOR_NAMES },
@@ -2565,6 +2577,9 @@ local OPTION_LABELS = {
   HeliType = "Aircraft Type",
   BattRsv  = "Batt Reserve %",
   BattVoice= "Battery Voice",
+  ArmVoice = "Arm/Disarm Voice",
+  GovVoice = "Governor Voice",
+  PIDVoice = "PID Profile Voice",
   DispLED   = "Display LEDs",
   ArmLED    = "Armed LED Color",
   DisarmLED = "Disarmed LED Color",

@@ -21,6 +21,9 @@ function M.new(config)
     getNamed = assert(config.getNamed),
     getGovState = assert(config.getGovState),
     getHeliType = assert(config.getHeliType),
+    armVoiceEnabled = assert(config.armVoiceEnabled),
+    govVoiceEnabled = assert(config.govVoiceEnabled),
+    profileVoiceEnabled = assert(config.profileVoiceEnabled),
     ompType = assert(config.ompType),
     audioPath = config.audioPath or "/WIDGETS/StacyDashV4/audio/",
   }
@@ -106,7 +109,8 @@ function M.new(config)
     if self.data.armValid then
       local state = (arm == 1 or arm == 3) and "ARMED" or "DISARMED"
       if self.alerts.lastArmAudioState ~= nil
-         and state ~= self.alerts.lastArmAudioState then
+         and state ~= self.alerts.lastArmAudioState
+         and self.armVoiceEnabled() then
         self:play(state == "ARMED" and "armed.wav" or "disarmed.wav")
       end
       self.alerts.lastArmAudioState = state
@@ -122,7 +126,8 @@ function M.new(config)
     local hasGovState = self.data.govValid or self.data.throttleValid
     if hasGovState and governor ~= "--" then
       if self.alerts.lastGovAudioState ~= nil
-         and governor ~= self.alerts.lastGovAudioState then
+         and governor ~= self.alerts.lastGovAudioState
+         and self.govVoiceEnabled() then
         self:play(govAudio[governor])
       end
       self.alerts.lastGovAudioState = governor
@@ -133,7 +138,8 @@ function M.new(config)
     local profile = self:getPidProfile()
     if self.data.pidProfileValid then
       if self.alerts.lastProfileAudioState ~= nil
-         and profile ~= self.alerts.lastProfileAudioState and profile > 0 then
+         and profile ~= self.alerts.lastProfileAudioState and profile > 0
+         and self.profileVoiceEnabled() then
         self:play("profile.wav")
         if profile <= 6 then self:play("profile/" .. profile .. ".wav") end
       end

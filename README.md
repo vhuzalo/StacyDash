@@ -87,7 +87,7 @@ Se nem `Gov` nem `Thr` estiverem disponíveis, o componente mostra `--`. Um valo
 
 A topbar mostra `ARMED` ou `DISARMED` a partir de `ARM`. Quando houver flags publicadas por `ARMD`, como `THROTTLE`, `ARM SWITCH`, `NO PREARM`, `FAIL SAFE` e `CALIBRATING`, elas têm prioridade e substituem o estado no mesmo componente. Se `ARMD` não for encontrado, o widget também tenta a fonte `Arming Disable`.
 
-O sensor `PID#` é exibido junto ao contador de voos; por exemplo, `10 Flights · P2`. Alterações de arm, governor e perfil são anunciadas pelos mesmos áudios utilizados no DBK. O primeiro valor recebido apenas inicializa o estado, evitando anúncios indevidos ao abrir ou recarregar o widget.
+O sensor `PID#` é exibido junto ao contador de voos; por exemplo, `10 Flights · P2`. Alterações de arm, governor e perfil podem ser anunciadas pelos mesmos áudios utilizados no DBK quando suas respectivas opções de voz estiverem ativadas. O primeiro valor recebido apenas inicializa o estado, evitando anúncios indevidos ao abrir ou recarregar o widget.
 
 No perfil Nitro, `Vbec` é tratado como a tensão total de uma bateria de receptor 2S. Os limites mínimo e máximo são configuráveis no widget.
 
@@ -262,6 +262,9 @@ O workflow pode ser executado manualmente na aba **Actions** para testar e baixa
 | **Aircraft Type** | Electric, Nitro, OMPHOBBY ou Betaflight | Electric |
 | **Batt Reserve %** | reserva removida da escala útil da bateria | 20% |
 | **Battery Voice** | ativa anúncios de bateria | desligado |
+| **Arm/Disarm Voice** | ativa anúncios nas transições armado/desarmado | desligado |
+| **Governor Voice** | ativa anúncios das mudanças de estado do governor | desligado |
+| **PID Profile Voice** | ativa anúncios das mudanças de perfil PID | desligado |
 | **Display LEDs** | ativa o controle dos LEDs RGB do rádio | desligado |
 | **Rx Pack Minimum** | tensão considerada vazia no perfil Nitro | 6,60 V |
 | **Rx Pack Maximum** | tensão considerada cheia no perfil Nitro | 8,40 V |
