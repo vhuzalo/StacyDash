@@ -5,32 +5,93 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Uso:
-  ./deploy.sh [--dry-run] /caminho/para/raiz-do-cartao
+  ./deploy.sh [--dry-run] [/caminho/para/raiz-do-cartao]
 
 Exemplos:
+  ./deploy.sh
+  ./deploy.sh --dry-run
   ./deploy.sh --dry-run /run/media/$USER/EDGETX
   ./deploy.sh /run/media/$USER/EDGETX
 
-O destino deve ser a raiz do cartão SD, onde ficam WIDGETS/ e IMAGES/.
+Sem um destino, o script procura automaticamente um cartão EdgeTX montado em
+/run/media, /media ou /mnt. O destino explícito deve ser a raiz do cartão SD,
+onde ficam WIDGETS/ e IMAGES/.
 O script atualiza o widget, os áudios e as imagens, mas nunca sobrescreve um
 flights-count.csv que já exista no rádio.
 EOF
 }
 
 dry_run=false
-if [[ ${1:-} == "--dry-run" ]]; then
-  dry_run=true
+radio_root=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dry-run) dry_run=true ;;
+    -h|--help) usage; exit 0 ;;
+    --*)
+      printf 'Erro: opção desconhecida: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [[ -n $radio_root ]]; then
+        printf 'Erro: informe no máximo um destino.\n' >&2
+        usage >&2
+        exit 2
+      fi
+      radio_root=${1%/}
+      ;;
+  esac
   shift
-fi
+done
 
-if [[ $# -ne 1 || ${1:-} == "-h" || ${1:-} == "--help" ]]; then
-  usage
-  [[ $# -eq 1 ]] && exit 0
-  exit 2
-fi
+is_edgetx_root() {
+  local candidate=$1
+  [[ -d $candidate/WIDGETS ]] || return 1
+  [[ -d $candidate/RADIO || -d $candidate/SCRIPTS || -d $candidate/SOUNDS \
+     || -d $candidate/IMAGES ]]
+}
+
+detect_radio_root() {
+  local default_roots="/run/media/${USER:-}:/media/${USER:-}:/run/media:/media:/mnt"
+  local configured_roots=${STACYDASH_MOUNT_ROOTS:-$default_roots}
+  local search_root candidate
+  local -a roots candidates
+  local -A seen=()
+  IFS=: read -r -a roots <<< "$configured_roots"
+
+  for search_root in "${roots[@]}"; do
+    [[ -n $search_root && -d $search_root ]] || continue
+    if is_edgetx_root "$search_root" && [[ -z ${seen["$search_root"]+x} ]]; then
+      candidates+=("$search_root")
+      seen["$search_root"]=1
+    fi
+    while IFS= read -r -d '' candidate; do
+      is_edgetx_root "$candidate" || continue
+      [[ -z ${seen["$candidate"]+x} ]] || continue
+      candidates+=("$candidate")
+      seen["$candidate"]=1
+    done < <(find "$search_root" -mindepth 1 -maxdepth 2 -type d -print0 2>/dev/null)
+  done
+
+  if [[ ${#candidates[@]} -eq 1 ]]; then
+    radio_root=${candidates[0]}
+    printf 'Rádio EdgeTX detectado automaticamente: %s\n' "$radio_root"
+    return
+  fi
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    printf 'Erro: nenhum cartão EdgeTX montado foi detectado.\n' >&2
+  else
+    printf 'Erro: mais de um cartão EdgeTX foi detectado:\n' >&2
+    printf '  %s\n' "${candidates[@]}" >&2
+  fi
+  printf 'Informe a raiz desejada: ./deploy.sh /caminho/para/o/cartao\n' >&2
+  exit 1
+}
 
 project_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-radio_root=${1%/}
+if [[ -z $radio_root ]]; then
+  detect_radio_root
+fi
 
 if [[ ! -d $radio_root ]]; then
   printf 'Erro: o destino não existe ou não é uma pasta: %s\n' "$radio_root" >&2

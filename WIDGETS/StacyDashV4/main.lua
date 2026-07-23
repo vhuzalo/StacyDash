@@ -233,12 +233,24 @@ local A = {
   lastProfileAudioState = nil,
 }
 local HELI_ELECTRIC, HELI_NITRO, HELI_OMPHOBBY, HELI_BETAFLIGHT = 1, 2, 3, 4
+local LED_COLOR_NAMES = {
+  "Red", "Green", "Blue", "Yellow", "Cyan", "Magenta",
+  "White", "Orange", "Purple", "Pink",
+}
+local LED_COLORS = {
+  { 255,   0,   0 }, {   0, 255,   0 }, {   0,   0, 255 },
+  { 255, 255,   0 }, {   0, 255, 255 }, { 255,   0, 255 },
+  { 255, 255, 255 }, { 255, 100,   0 }, { 128,   0, 255 },
+  { 255,  40, 120 },
+}
 local OPT = {
   heliType     = HELI_ELECTRIC,
   battBarMode   = 0,
   reservePct    = 0,
   battVoice     = false,
   displayLeds   = false,
+  armLedColor   = { 0, 80, 255 },
+  disarmLedColor= { 255, 0, 0 },
   rxPackMin     = 6.6,
   rxPackMax     = 8.4,
   rxPackValid   = true,
@@ -246,6 +258,8 @@ local OPT = {
 }
 MODULE.ledService = MODULE.leds.new({
   isEnabled = function() return OPT.displayLeds end,
+  armedColor = function() return OPT.armLedColor end,
+  disarmedColor = function() return OPT.disarmLedColor end,
 })
 local BATTERY_VOICE = {
   levels       = { 50, 40, 30, 20, 10, 0 },
@@ -363,6 +377,12 @@ local function isPhysicalMotorSource(src)
   -- readable SOURCE is still safer than silently falling back to a channel.
   return not inspected
 end
+local function ledColor(choice, defaultIndex)
+  local index = math.floor(tonumber(choice) or defaultIndex)
+  if not LED_COLORS[index] then index = defaultIndex end
+  return LED_COLORS[index]
+end
+
 local function applyOptions(opts)
   local rawTheme = tonumber(opts and opts.Theme) or 0
   OPT.bgTransparent   = (rawTheme == 3)
@@ -393,6 +413,8 @@ local function applyOptions(opts)
     if OPT.reservePct > 50 then OPT.reservePct = 50 end
     OPT.battVoice   = (opts.BattVoice == 1 or opts.BattVoice == true)
     OPT.displayLeds = (opts.DispLED == 1 or opts.DispLED == true)
+    OPT.armLedColor = ledColor(opts.ArmLED, 3)
+    OPT.disarmLedColor = ledColor(opts.DisarmLED, 1)
     local parsedMin = parseVolt(opts.RxPackMin, nil)
     local parsedMax = parseVolt(opts.RxPackMax, nil)
     OPT.rxPackMin = parsedMin or 6.6
@@ -2530,6 +2552,8 @@ local options = {
   { "BattRsv", VALUE, 20, 0, 50 },
   { "BattVoice", BOOL, 0 },
   { "DispLED", BOOL, 0 },
+  { "ArmLED", CHOICE, 3, LED_COLOR_NAMES },
+  { "DisarmLED", CHOICE, 1, LED_COLOR_NAMES },
   { "RxPackMin", STRING, "6.60" },
   { "RxPackMax", STRING, "8.40" },
   { "MotorSw", SOURCE, 0 },
@@ -2542,6 +2566,8 @@ local OPTION_LABELS = {
   BattRsv  = "Batt Reserve %",
   BattVoice= "Battery Voice",
   DispLED   = "Display LEDs",
+  ArmLED    = "Armed LED Color",
+  DisarmLED = "Disarmed LED Color",
   RxPackMin= "Rx Pack Minimum",
   RxPackMax= "Rx Pack Maximum",
   MotorSw  = "Motor Switch",

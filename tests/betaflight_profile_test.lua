@@ -7,11 +7,21 @@ RIGHT, CENTER, CENTERED = 16, 32, 32
 local now = 0
 local telemetry = {}
 local labels = {}
+local ledColors = {}
+
+LED_STRIP_LENGTH = 4
+function setRGBLedColor(index, red, green, blue)
+  ledColors[index] = { red, green, blue }
+end
+function applyRGBLedColors() end
+
+local function rgbFlag(red, green, blue)
+  -- Newer EdgeTX/LVGL builds use byte-packed RGB shifted by one byte.
+  return red * 16777216 + green * 65536 + blue * 256 + 16
+end
 
 lcd = {
-  RGB = function(red, green, blue)
-    return red * 65536 + green * 256 + blue
-  end,
+  RGB = rgbFlag,
 }
 
 local function object(properties)
@@ -84,7 +94,9 @@ local function options(aircraftType)
     HeliType = aircraftType,
     BattRsv = 20,
     BattVoice = 0,
-    DispLED = 0,
+    DispLED = 1,
+    ArmLED = 2,
+    DisarmLED = 1,
     RxPackMin = "6.60",
     RxPackMax = "8.40",
     MotorSw = 101,
@@ -105,6 +117,10 @@ assert(dashboard.options[4][4][4] == "Betaflight", "Betaflight must remain choic
 assert(dashboard.translate("HeliType") == "Aircraft Type")
 
 local widget = dashboard.create({ w = 800, h = 480 }, options(4))
+local optionTypes = {}
+for _, option in ipairs(dashboard.options) do optionTypes[option[1]] = option[2] end
+assert(optionTypes.ArmLED == CHOICE and optionTypes.DisarmLED == CHOICE,
+       "LED color settings must use a stable color choice list")
 dashboard.update(widget, options(4))
 dashboard.refresh(widget)
 assertText("VBAT")
@@ -149,6 +165,15 @@ telemetry = {
 }
 now = 100
 dashboard.update(widget, options(1))
+telemetry.ARM = 1
+dashboard.background(widget)
+assert(ledColors[0][1] == 0 and ledColors[0][2] == 255 and ledColors[0][3] == 0,
+       "indexed armed color must resolve to green")
+telemetry.ARM = 0
+now = now + 10
+dashboard.background(widget)
+assert(ledColors[0][1] == 255 and ledColors[0][2] == 0 and ledColors[0][3] == 0,
+       "indexed disarmed color must resolve to red")
 assertText("CELL")
 assert(not hasText("VBAT"), "Electric profile must restore the CELL label")
 assertText("1850")

@@ -219,10 +219,16 @@ Essa separação reduz a quantidade de variáveis locais no módulo principal �
 
 ### Deploy pelo computador
 
-Em Linux, o script `deploy.sh` copia os arquivos para um cartão SD ou rádio montado no sistema. Informe a raiz do cartão, isto é, a pasta dentro da qual ficam `WIDGETS` e `IMAGES`:
+Em Linux, o script `deploy.sh` detecta automaticamente um cartão SD ou rádio EdgeTX montado em `/run/media`, `/media` ou `/mnt`:
 
 ```bash
-./deploy.sh --dry-run /run/media/$USER/EDGETX
+./deploy.sh --dry-run
+./deploy.sh
+```
+
+Se houver mais de um cartão compatível, ou se ele estiver montado em outro local, informe explicitamente a raiz dentro da qual ficam `WIDGETS` e `IMAGES`:
+
+```bash
 ./deploy.sh /run/media/$USER/EDGETX
 ```
 
@@ -303,10 +309,14 @@ Além dos alertas de bateria, a pasta `/WIDGETS/StacyDashV4/audio` contém anún
 
 Com **Display LEDs** ativado, o StacyDash controla a faixa RGB do rádio seguindo o mesmo padrão do DBK:
 
-- disable flags presentes: animação vermelha circulante;
-- `ARMED`: azul sólido;
-- `DISARMED`: vermelho sólido;
+- disable flags presentes: animação circulante na cor escolhida para `DISARMED`;
+- `ARMED`: cor sólida escolhida em **Armed LED Color** (azul por padrão);
+- `DISARMED`: cor sólida escolhida em **Disarmed LED Color** (vermelho por padrão);
 - opção desativada: LEDs apagados.
+
+As cores disponíveis são vermelho, verde, azul, amarelo, ciano, magenta,
+branco, laranja, roxo e rosa. A lista usa valores RGB diretos e não depende do
+formato interno do seletor de cores do firmware.
 
 O recurso só atua quando o rádio e a versão do EdgeTX expõem `LED_STRIP_LENGTH`, `setRGBLedColor()` e `applyRGBLedColors()`. Em rádios sem essa API, o módulo não executa nenhuma operação.
 
