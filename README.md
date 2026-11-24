@@ -305,6 +305,8 @@ três posições e não depende do suporte a touch do firmware.
 
 ## Alertas
 
+Os alertas de bateria exigem que a controladora reporte `ARM` armado (valor 1 ou 3). Sem esse estado válido, a barra continua exibindo os dados disponíveis e o widget fica sem avisos de bateria. Isso inclui OMPHOBBY e o perfil básico Betaflight, que não fornecem `ARM` ao widget. Com **Display LEDs** ligado, o LED usa a animação circular vermelha durante a vibração e volta à indicação de status ao terminar.
+
 Com **Battery Voice** ativado, o widget anuncia os níveis de 50%, 40%, 30%, 20%, 10% e 0%. Ao chegar a 0%, reproduz `dead.wav` repetidamente até o reconhecimento pela chave do motor. Se um arquivo de percentual estiver ausente, tenta usar a voz numérica do EdgeTX.
 
 O modo **LiPo Cell Curve** usa a tabela de descarga do [lua_avrLiX](https://github.com/vhuzalo/lua_avrLiX) e aplica a reserva configurada ao resultado. Electric usa `Vcel`, OMPHOBBY usa `RxBt` dividido pelo número de células, e Betaflight requer uma fonte adicional `Vcel` em V/célula. Sem uma leitura válida por célula, esse modo mostra `NO DATA`. O perfil Nitro usa as opções do pack do receptor.

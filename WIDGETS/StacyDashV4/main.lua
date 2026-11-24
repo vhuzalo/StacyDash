@@ -997,10 +997,14 @@ local function playBatteryRemainingAlert(level)
   end
   return false
 end
-local function playBatteryHaptic(duration)
+local function playBatteryHaptic(duration, isBatteryAlert)
   if not playHaptic then return end
   local modeNow = rawget(_G, "PLAY_NOW") or 0
-  pcall(playHaptic, duration or 15, 0, modeNow)
+  duration = duration or 15
+  if pcall(playHaptic, duration, 0, modeNow) and isBatteryAlert ~= false then
+    -- EdgeTX doubles the length and applies the radio's haptic length setting.
+    A.batteryPulseEnd = frameNow() + duration * 2 + 8
+  end
 end
 function CELL_BATTERY.resetAlert()
   CELL_BATTERY.alertBand = nil
@@ -1238,7 +1242,7 @@ local function updateBatteryHapticTick()
     end
   end
 end
-local function updateEscBecAlerts(escT, escValid, becV, becValid)
+local function updateEscBecAlerts(escT, escValid, becV, becValid, armed)
   if not A.linkAvailable then
     A.escTempHighSince = nil
     A.becLowSince = nil
@@ -1250,7 +1254,7 @@ local function updateEscBecAlerts(escT, escValid, becV, becValid)
       if not A.escTempAlertPlayed then
         if A.escTempHighSince == nil then A.escTempHighSince = now end
         if (now - A.escTempHighSince) >= SAFETY.alertConfirmTicks then
-          playBatteryHaptic()
+          playBatteryHaptic(nil, false)
           A.escTempAlertPlayed = true
           A.escTempHighSince = nil
         end
@@ -1264,7 +1268,7 @@ local function updateEscBecAlerts(escT, escValid, becV, becValid)
   else
     A.escTempHighSince = nil
   end
-  if becValid and becV >= SAFETY.becAlertMinVoltage then
+  if armed and becValid and becV >= SAFETY.becAlertMinVoltage then
     if becV < SAFETY.becVoltThreshold then
       if not A.becAlertPlayed then
         if A.becLowSince == nil then A.becLowSince = now end
@@ -1437,8 +1441,15 @@ local function tick(nowT)
   local armState = MODULE.statusService:getArmState()
   local armingFlags = MODULE.statusService:getArmingDisableFlags()
   MODULE.statusService:getPidProfile()
-  MODULE.ledService:update(D.armValid and (armState == 1 or armState == 3),
-                           armingFlags ~= nil and armingFlags > 0)
+  local armed = D.armValid and (armState == 1 or armState == 3)
+  if A.batteryAlertsArmed and not armed then
+    if A.batteryPulseEnd and nowT < A.batteryPulseEnd then playBatteryHaptic(0, false) end
+    resetBatteryAlertState("flight")
+    resetBatteryAlertState("rx")
+    A.becAlertPlayed = false
+    A.batteryPulseEnd = nil
+  end
+  A.batteryAlertsArmed = armed
   local hasCellVoltage = D.cellVoltageValid and cellVoltage > 0
   local telemetryEvidence = hasCellVoltage or D.batteryPercentValid
                             or D.capacityValid or D.currentValid
@@ -1497,13 +1508,13 @@ local function tick(nowT)
   -- Electric and OMPHOBBY modes. Nitro displays an Rx-pack voltage bar, so it
   -- must never run or retain this electric flight-pack alert state machine.
   local voiceEnabled = OPT.battVoice
-  if OPT.battBarMode == 0 and not A.flightBatteryAlertsPaused then
+  if armed and OPT.battBarMode == 0 and not A.flightBatteryAlertsPaused then
     CELL_BATTERY.updateAlert(nowT, hasCellVoltage and cellVoltage, voiceEnabled)
   else
     CELL_BATTERY.resetAlert()
   end
   if OPT.battBarMode == 0 then
-    if not A.flightBatteryAlertsPaused then
+    if armed and not A.flightBatteryAlertsPaused then
       updateBatteryAlertState(D.adjustedPercent, hasPct, voiceEnabled, pctSource)
       BATTERY_VOICE.updateDead(voiceEnabled)
       updateBatteryHapticTick()
@@ -1512,11 +1523,13 @@ local function tick(nowT)
          or (A.battHapticState or 0) ~= 0 then
     resetBatteryAlertState("flight")
   end
-  updateEscBecAlerts(escT, D.tempValid, becV, D.becValid)
+  updateEscBecAlerts(escT, D.tempValid, becV, D.becValid, armed)
   if OPT.battBarMode == 1 then
     local rx = getRxBatt()
-    updateRxPackAlert(rx)
-    BATTERY_VOICE.updateRxDead(voiceEnabled, rx)
+    if armed then
+      updateRxPackAlert(rx)
+      BATTERY_VOICE.updateRxDead(voiceEnabled, rx)
+    end
     if D.becValid and rx and rx > 0 then
       D.rxVoltage     = rx
       D.rxCellVoltage = rx / 2
@@ -1539,6 +1552,11 @@ local function tick(nowT)
       D.rxVoltage = nil; D.rxCellVoltage = nil; D.rxPercent = 0
     end
   end
+  local vibrating = armed and A.linkAvailable and type(playHaptic) == "function"
+                    and (nowT < (A.batteryPulseEnd or 0)
+                         or (not A.flightBatteryAlertsPaused
+                             and (CELL_BATTERY.sosPulse ~= nil or (A.battHapticState or 0) ~= 0)))
+  MODULE.ledService:update(armed, armingFlags ~= nil and armingFlags > 0, vibrating)
 end
 local function statRpmMax()  return S.rpmMax or 0 end
 local function statCurrMax() return S.currMax or 0 end
@@ -1578,6 +1596,8 @@ local function resetSessionStats()
 end
 local function resetSessionEvidence()
   CELL_BATTERY.resetAlert()
+  A.batteryAlertsArmed = false
+  A.batteryPulseEnd = nil
   for key in pairs(RESOLVED) do RESOLVED[key] = nil end
   A.linkAvailable = false
   A.linkSourceKnown = false

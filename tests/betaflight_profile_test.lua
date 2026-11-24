@@ -197,6 +197,7 @@ assertText("NO DATA") -- the forced curve requires a cell voltage
 local pulses = 0
 local pulseLengths = {}
 playHaptic = function(duration)
+  if duration == 0 then return end
   pulses = pulses + 1
   pulseLengths[pulses] = duration
 end
@@ -213,6 +214,7 @@ local function cellAt(tick, volts, expectedPulses)
   assert(pulses == expectedPulses, "unexpected voltage warning at tick " .. tick)
 end
 
+telemetry.ARM = 1
 cellAt(200, 3.50, 0)
 cellAt(790, 3.50, 0)
 cellAt(800, 3.50, 1)
@@ -265,6 +267,8 @@ cellAt(4100, 3.69, 6)
 assert(#playedFiles == 1 and playedFiles[1]:match("/low%.wav$"))
 cellAt(4200, 1.50, 6)
 cellAt(4400, 1.50, 7)
+assert(ledColors[0][1] == 255 and ledColors[1][1] < 255 and ledColors[0][2] == 0,
+       "armed battery warning should use circulating red")
 assert(#playedFiles == 2 and playedFiles[2]:match("/crit%.wav$"))
 assert(#playedFiles[1] <= #"/WIDGETS/StacyDashV4/BatterySounds/dead.wav")
 assert(#playedFiles[2] <= #"/WIDGETS/StacyDashV4/BatterySounds/dead.wav")
@@ -280,8 +284,22 @@ for index, duration in ipairs(sos) do
 end
 assert(#playedFiles == 2, "play voice once per SOS sequence")
 cellAt(4990, 1.50, 15)
+assert(ledColors[0][1] == 0 and ledColors[0][2] == 255,
+       "LED should restore the configured armed color after SOS")
 cellAt(5000, 1.50, 16)
 assert(#playedFiles == 3 and pulseLengths[16] == 8, "SOS should repeat after six seconds")
+telemetry.ARM = 0
+cellAt(5010, 1.50, 16)
+cellAt(5800, 1.50, 16)
+telemetry.ARM = nil
+cellAt(5900, 1.50, 16)
+cellAt(6600, 1.50, 16)
+assert(#playedFiles == 3, "battery voice must stay quiet without a valid armed status")
+telemetry.ARM = 3
+cellAt(6700, 1.50, 16)
+cellAt(6890, 1.50, 16)
+cellAt(6900, 1.50, 17)
+assert(#playedFiles == 4, "rearming should start a fresh low-voltage confirmation")
 io.open = openFile
 
 print("betaflight_profile_test: ok")

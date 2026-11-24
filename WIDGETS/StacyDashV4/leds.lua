@@ -1,4 +1,5 @@
 local M = {}
+local BATTERY_ALERT_RED = { 255, 0, 0 }
 
 function M.new(config)
   local self = {
@@ -69,7 +70,7 @@ function M.new(config)
     applyRGBLedColors()
   end
 
-  function self:update(isArmed, hasDisableFlags)
+  function self:update(isArmed, hasDisableFlags, batteryAlert)
     if not self:isAvailable() then return end
 
     if not self.isEnabled() then
@@ -83,12 +84,13 @@ function M.new(config)
     local armedColor = self.armedColor()
     local disarmedColor = self.disarmedColor()
 
-    if hasDisableFlags then
+    if batteryAlert or hasDisableFlags then
       local phase = math.floor(((getTime and getTime()) or 0) / 2)
-      local mode = colorKey("DISABLE", disarmedColor)
+      local color = batteryAlert and BATTERY_ALERT_RED or disarmedColor
+      local mode = colorKey("CIRCULATING", color)
       if self.mode ~= mode or self.phase ~= phase then
         self.mode, self.phase = mode, phase
-        self:circulating(phase, disarmedColor)
+        self:circulating(phase, color)
       end
     elseif isArmed then
       local mode = colorKey("ARMED", armedColor)
