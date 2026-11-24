@@ -71,7 +71,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ASSET_NAME: ${{ steps.package.outputs.asset_name }}
-          REPLACE_RELEASE: ${{ github.event.forced }}
         shell: bash
         run: |
           set -euo pipefail
@@ -79,7 +78,7 @@ jobs:
           NOTES_FILE="release-notes/${GITHUB_REF_NAME}.md"
           ASSETS=("${ASSET_NAME}" "${ASSET_NAME}.sha256")
 
-          if [[ "${REPLACE_RELEASE}" == "true" ]] && gh release view "${GITHUB_REF_NAME}" >/dev/null; then
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release upload "${GITHUB_REF_NAME}" "${ASSETS[@]}" --clobber
             if [[ -f "${NOTES_FILE}" ]]; then
               gh release edit "${GITHUB_REF_NAME}" --notes-file "${NOTES_FILE}"
