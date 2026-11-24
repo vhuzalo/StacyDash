@@ -264,6 +264,22 @@ MODULE.ledService = MODULE.leds.new({
   armedColor = function() return OPT.armLedColor end,
   disarmedColor = function() return OPT.disarmLedColor end,
 })
+local CELL_BATTERY = {
+  defaults = {
+    mode = 1, low = "3.50", critical = "3.30", lowSeconds = 6, criticalSeconds = 5,
+  },
+  repeatTicks = 600,
+  -- avrLiX discharge lookup (vhuzalo/lua_avrLiX). Preserve its centivolt
+  -- indexing and bounds, including saturation above the last usable entry.
+  curve = {
+    0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+    4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6,
+    7, 7, 7, 7, 8, 8, 9, 9, 10, 12, 13, 14, 17, 19, 20, 22, 23, 26, 28, 30,
+    33, 36, 39, 42, 45, 48, 51, 54, 57, 58, 60, 62, 64, 66, 67, 69, 70, 72, 74, 75,
+    77, 78, 80, 81, 82, 84, 85, 86, 86, 87, 88, 89, 91, 92, 94, 95, 96, 97, 97, 99, 100,
+  },
+}
 local BATTERY_VOICE = {
   levels       = { 50, 40, 30, 20, 10, 0 },
   path         = "/WIDGETS/StacyDashV4/BatterySounds/",
@@ -386,7 +402,29 @@ local function ledColor(choice, defaultIndex)
   return LED_COLORS[index]
 end
 
+function CELL_BATTERY.configure(opts)
+  opts = opts or {}
+  local defaults = CELL_BATTERY.defaults
+  local low = parseVolt(opts.CellLowV, tonumber(defaults.low))
+  local critical = parseVolt(opts.CellCritV, tonumber(defaults.critical))
+  if low <= critical or low > 4.5 or critical <= 1 then
+    low, critical = tonumber(defaults.low), tonumber(defaults.critical)
+  end
+  local lowSeconds = tonumber(opts.CellLowSec) or defaults.lowSeconds
+  local criticalSeconds = tonumber(opts.CellCritSec) or defaults.criticalSeconds
+  lowSeconds = (lowSeconds >= 1 and lowSeconds <= 60) and lowSeconds or defaults.lowSeconds
+  criticalSeconds = (criticalSeconds >= 1 and criticalSeconds <= 60)
+                    and criticalSeconds or defaults.criticalSeconds
+  if OPT.cellLowV ~= low or OPT.cellCritV ~= critical
+     or OPT.cellLowSeconds ~= lowSeconds or OPT.cellCritSeconds ~= criticalSeconds then
+    CELL_BATTERY.resetAlert()
+  end
+  OPT.cellCurve = tonumber(opts.BattEst) == 2
+  OPT.cellLowV, OPT.cellCritV = low, critical
+  OPT.cellLowSeconds, OPT.cellCritSeconds = lowSeconds, criticalSeconds
+end
 local function applyOptions(opts)
+  CELL_BATTERY.configure(opts)
   local rawTheme = tonumber(opts and opts.Theme) or 0
   OPT.bgTransparent   = (rawTheme == 3)
   applyTheme(MODULE.themes.nameForOption(rawTheme))
@@ -552,6 +590,7 @@ local BETAFLIGHT_SENSOR = {
   -- CRSF/ELRS names published by Betaflight and discovered by EdgeTX. RxBt
   -- must represent total pack voltage (report_cell_voltage=OFF).
   packVoltage      = "RxBt",
+  cellVoltage      = "Vcel",
   current          = "Curr",
   capacity         = "Capa",
   batteryPercent   = "Bat%",
@@ -893,7 +932,12 @@ end
 -- of an empty battery. OMPHOBBY keeps its stricter RxBt + M1/M2 contract.
 local function selectFlightBatteryPercent(heliType, sensorPercent, sensorValid,
                                           voltagePercent, hasCellVoltage,
-                                          hasPackVoltage)
+                                          hasPackVoltage, cellVoltage)
+  if OPT.cellCurve and heliType ~= HELI_NITRO then
+    if not hasCellVoltage or cellVoltage <= 1 then return 0, false, nil end
+    local index = math.max(1, math.min(120, math.floor(cellVoltage * 100 - 298)))
+    return CELL_BATTERY.curve[index], true, "voltage"
+  end
   local raw = tonumber(sensorPercent)
   if heliType == HELI_ELECTRIC or heliType == HELI_BETAFLIGHT then
     local fcPercentUsable = sensorValid and raw ~= nil
@@ -907,7 +951,9 @@ local function selectFlightBatteryPercent(heliType, sensorPercent, sensorValid,
   else
     return 0, false, nil
   end
-  if voltagePercent ~= nil then return voltagePercent, true, "voltage" end
+  if heliType ~= HELI_BETAFLIGHT and voltagePercent ~= nil then
+    return voltagePercent, true, "voltage"
+  end
   return 0, false, nil
 end
 local function calculateAdjustedPercent(actual, reserve)
@@ -946,6 +992,30 @@ local function playBatteryHaptic()
   if not playHaptic then return end
   local modeNow = rawget(_G, "PLAY_NOW") or 0
   pcall(playHaptic, 15, 0, modeNow)
+end
+function CELL_BATTERY.resetAlert()
+  CELL_BATTERY.alertBand = nil
+  CELL_BATTERY.nextAlert = nil
+end
+function CELL_BATTERY.updateAlert(now, volts, voiceEnabled)
+  if not A.linkAvailable or not volts or volts <= 1 or volts > OPT.cellLowV then
+    CELL_BATTERY.resetAlert()
+    return
+  end
+  local critical = volts <= OPT.cellCritV
+  local band = critical and "critical" or "low"
+  if CELL_BATTERY.alertBand ~= band or CELL_BATTERY.nextAlert == nil then
+    local delay = critical and OPT.cellCritSeconds or OPT.cellLowSeconds
+    CELL_BATTERY.alertBand = band
+    CELL_BATTERY.nextAlert = now + delay * 100
+  end
+  if now < CELL_BATTERY.nextAlert then return end
+  playBatteryHaptic()
+  if voiceEnabled and type(playNumber) == "function" then
+    local precision = rawget(_G, "PREC2") or 32
+    pcall(playNumber, math.floor(volts * 100 + 0.5), rawget(_G, "UNIT_VOLTS") or 1, precision)
+  end
+  CELL_BATTERY.nextAlert = now + CELL_BATTERY.repeatTicks
 end
 local function resetBatteryAlertState(scope)
   scope = scope or "all"
@@ -1371,7 +1441,7 @@ local function tick(nowT)
   local hasPackVoltage = D.packVoltageValid and volt > 0
   local pct, hasPct, pctSource = selectFlightBatteryPercent(
     OPT.heliType, pctSensor, D.batteryPercentValid, voltagePct,
-    hasCellVoltage, hasPackVoltage)
+    hasCellVoltage, hasPackVoltage, cellVoltage)
   local hadPct = D.hasBattData
   D.hasBattData = hasPct
   D.adjustedPercent = calculateAdjustedPercent(pct, OPT.reservePct)
@@ -1399,6 +1469,11 @@ local function tick(nowT)
   -- Electric and OMPHOBBY modes. Nitro displays an Rx-pack voltage bar, so it
   -- must never run or retain this electric flight-pack alert state machine.
   local voiceEnabled = OPT.battVoice
+  if OPT.battBarMode == 0 and not A.flightBatteryAlertsPaused then
+    CELL_BATTERY.updateAlert(nowT, hasCellVoltage and cellVoltage, voiceEnabled)
+  else
+    CELL_BATTERY.resetAlert()
+  end
   if OPT.battBarMode == 0 then
     if not A.flightBatteryAlertsPaused then
       updateBatteryAlertState(D.adjustedPercent, hasPct, voiceEnabled, pctSource)
@@ -1474,6 +1549,7 @@ local function resetSessionStats()
   MODULE.elrsService:reset()
 end
 local function resetSessionEvidence()
+  CELL_BATTERY.resetAlert()
   for key in pairs(RESOLVED) do RESOLVED[key] = nil end
   A.linkAvailable = false
   A.linkSourceKnown = false
@@ -2298,12 +2374,12 @@ local function updateUiState()
       setLabel(V.tiles[1].value, "--", C_DIM, nil, nil, nil, nil, CENTERED)
       setLabel(V.tiles[1].footer, "", C_DIM)
     end
-    local cell = OPT.heliType == HELI_BETAFLIGHT and getPackVolt()
-                 or getCellVoltage()
-    local cellMin = OPT.heliType == HELI_BETAFLIGHT and statPackMin()
-                    or statCellMin()
-    local voltageValid = OPT.heliType == HELI_BETAFLIGHT
-                         and D.packVoltageValid or D.cellVoltageValid
+    local cell, cellMin, voltageValid
+    if OPT.heliType == HELI_BETAFLIGHT then
+      cell, cellMin, voltageValid = getPackVolt(), statPackMin(), D.packVoltageValid
+    else
+      cell, cellMin, voltageValid = getCellVoltage(), statCellMin(), D.cellVoltageValid
+    end
     if voltageValid and cell > 0 then
       local format = OPT.heliType == HELI_BETAFLIGHT and "%.1f" or "%.2f"
       local color = OPT.heliType == HELI_BETAFLIGHT and C_TEXT
@@ -2484,6 +2560,7 @@ local function update(widget, options)
   widget.options = options
   local previousHeliType = OPT.heliType
   local previousReserve = OPT.reservePct
+  local previousCellCurve = OPT.cellCurve
   local previousRxMin = OPT.rxPackMin
   local previousRxMax = OPT.rxPackMax
   local previousRxValid = OPT.rxPackValid
@@ -2491,7 +2568,8 @@ local function update(widget, options)
   local previousElrsSource = SRC.elrsSwitch
   applyOptions(options)
   local heliChanged = previousHeliType ~= OPT.heliType
-  local reserveChanged = previousReserve ~= OPT.reservePct
+  local percentSettingsChanged = previousReserve ~= OPT.reservePct
+                                 or previousCellCurve ~= OPT.cellCurve
   local rxSettingsChanged = previousRxMin ~= OPT.rxPackMin
                             or previousRxMax ~= OPT.rxPackMax
                             or previousRxValid ~= OPT.rxPackValid
@@ -2502,7 +2580,7 @@ local function update(widget, options)
     resetSessionStats()
     resetSessionEvidence()
   else
-    if reserveChanged then
+    if percentSettingsChanged then
       -- Changing usable reserve changes percentage meaning, but a visual/theme
       -- edit must never erase live low-battery or Nitro warning state.
       resetBatteryAlertState("flight")
@@ -2525,7 +2603,7 @@ local function update(widget, options)
     A.elrsSwitchLastPosition = nil
     A.elrsViewTogglePending = false
   end
-  if heliChanged or reserveChanged then D.hasBattData = false end
+  if heliChanged or percentSettingsChanged then D.hasBattData = false end
   if heliChanged or rxSettingsChanged then
     D.rxVoltage = nil
     D.rxCellVoltage = nil
@@ -2570,6 +2648,11 @@ local options = {
   { "RxPackMax", STRING, "8.40" },
   { "MotorSw", SOURCE, 0 },
   { "ElrsSw",  SOURCE, 0 },
+  { "BattEst", CHOICE, CELL_BATTERY.defaults.mode, { "Auto", "LiPo Cell Curve" } },
+  { "CellLowV", STRING, CELL_BATTERY.defaults.low },
+  { "CellLowSec", VALUE, CELL_BATTERY.defaults.lowSeconds, 1, 60 },
+  { "CellCritV", STRING, CELL_BATTERY.defaults.critical },
+  { "CellCritSec", VALUE, CELL_BATTERY.defaults.criticalSeconds, 1, 60 },
 }
 local OPTION_LABELS = {
   TxBatt   = "TX Battery",
@@ -2587,6 +2670,11 @@ local OPTION_LABELS = {
   RxPackMax= "Rx Pack Maximum",
   MotorSw  = "Motor Switch",
   ElrsSw   = "ELRS Screen Switch",
+  BattEst  = "Battery Estimation",
+  CellLowV = "Low Battery (default " .. CELL_BATTERY.defaults.low .. " V/cell)",
+  CellLowSec = "Low Delay (default " .. CELL_BATTERY.defaults.lowSeconds .. " s)",
+  CellCritV = "Critical Battery (default " .. CELL_BATTERY.defaults.critical .. " V/cell)",
+  CellCritSec = "Critical Delay (default " .. CELL_BATTERY.defaults.criticalSeconds .. " s)",
 }
 local function translate(name, language)
   return OPTION_LABELS[name] or name

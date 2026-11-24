@@ -120,7 +120,7 @@ Sem `M1` ou `M2` no nome, a tensão por célula e a barra de bateria não podem 
 
 O perfil Betaflight assume o contrato CRSF/ExpressLRS e mantém o layout dos demais perfis. O tile `CELL` passa a ser `VBAT`; headspeed, RPM de cauda, governor, BEC, temperatura do ESC, arm e perfil PID permanecem sem dados porque não fazem parte deste perfil básico.
 
-Configure `report_cell_voltage=OFF` no Betaflight para que `RxBt` represente a tensão total do pack. A barra e os alertas dependem de `Bat%`, portanto configure corretamente a capacidade da bateria (`bat_capacity`) e a medição de corrente na controladora. Se `Bat%` não estiver disponível, o dashboard ainda mostra tensão, corrente e consumo, mas deixa a barra como `NO DATA` e não estima o percentual pela tensão.
+Configure `report_cell_voltage=OFF` no Betaflight para que `RxBt` represente a tensão total do pack. Em **Auto**, a barra e os alertas de percentual dependem de `Bat%`, portanto configure a capacidade da bateria (`bat_capacity`) e a medição de corrente na controladora. Sem `Bat%`, a barra mostra `NO DATA` e o painel continua exibindo tensão, corrente e consumo. A curva LiPo e os alertas por tensão exigem uma fonte separada `Vcel`, em V/célula.
 
 ### Link e transmissor
 
@@ -271,6 +271,11 @@ O workflow pode ser executado manualmente na aba **Actions** para testar e baixa
 | **Aircraft Type** | Electric, Nitro, OMPHOBBY ou Betaflight | Electric |
 | **Batt Reserve %** | reserva removida da escala útil da bateria | 20% |
 | **Battery Voice** | ativa anúncios de bateria | desligado |
+| **Battery Estimation** | `Auto` prioriza `Bat%`; `LiPo Cell Curve` usa a curva por tensão mesmo com `Bat%` disponível | Auto |
+| **Low Battery (V/cell)** | limite de tensão por célula para bateria baixa | 3,50 V |
+| **Low Battery Delay (s)** | tempo na faixa de bateria baixa antes do alerta | 6 s |
+| **Critical Battery (V/cell)** | limite de tensão por célula para bateria crítica | 3,30 V |
+| **Critical Battery Delay (s)** | tempo na faixa crítica antes do alerta | 5 s |
 | **Arm/Disarm Voice** | ativa anúncios nas transições armado/desarmado | desligado |
 | **Governor Voice** | ativa anúncios das mudanças de estado do governor | desligado |
 | **PID Profile Voice** | ativa anúncios das mudanças de perfil PID | desligado |
@@ -301,6 +306,12 @@ três posições e não depende do suporte a touch do firmware.
 ## Alertas
 
 Com **Battery Voice** ativado, o widget anuncia os níveis de 50%, 40%, 30%, 20%, 10% e 0%. Ao chegar a 0%, reproduz `dead.wav` repetidamente até o reconhecimento pela chave do motor. Se um arquivo de percentual estiver ausente, tenta usar a voz numérica do EdgeTX.
+
+O modo **LiPo Cell Curve** usa a tabela de descarga do [lua_avrLiX](https://github.com/vhuzalo/lua_avrLiX) e aplica a reserva configurada ao resultado. Electric usa `Vcel`, OMPHOBBY usa `RxBt` dividido pelo número de células, e Betaflight requer uma fonte adicional `Vcel` em V/célula. Sem uma leitura válida por célula, esse modo mostra `NO DATA`. O perfil Nitro usa as opções do pack do receptor.
+
+Os alertas por tensão de célula funcionam em **Auto** e **LiPo Cell Curve** quando há leitura válida e link. A faixa crítica tem prioridade sobre a faixa baixa. Cada faixa precisa permanecer ativa durante o seu atraso. O alerta vibra e, com **Battery Voice** ativado, anuncia a tensão. Repete a cada 6 s enquanto a condição persistir. O widget usa os padrões se o EdgeTX entregar campos novos ausentes, vazios ou zerados ao abrir uma configuração anterior.
+
+Em um widget que já estava instalado, o menu do EdgeTX pode mostrar `--` nos campos de tensão acrescentados pela atualização. Os padrões em uso aparecem ao lado dos campos, nos rótulos. Para gravar um valor nesse campo, edite-o no menu do widget.
 
 As vibrações de segurança funcionam independentemente dos arquivos de áudio:
 

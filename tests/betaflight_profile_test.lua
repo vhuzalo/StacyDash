@@ -178,4 +178,56 @@ assertText("CELL")
 assert(not hasText("VBAT"), "Electric profile must restore the CELL label")
 assertText("1850")
 
+-- Old configurations omit the new keys and still use Auto and both delays.
+telemetry["Bat%"] = 90
+now = 130
+dashboard.refresh(widget)
+assertText("87%")
+
+local config = options(1)
+config.BattEst = 2
+dashboard.update(widget, config)
+dashboard.refresh(widget)
+assertText("62%") -- avrLiX maps 3.95 V to 70% before reserve
+telemetry.Vcel = nil
+now = 150
+dashboard.refresh(widget)
+assertText("NO DATA") -- the forced curve requires a cell voltage
+
+local pulses = 0
+playHaptic = function() pulses = pulses + 1 end
+local legacyConfig = options(1)
+legacyConfig.BattEst = 0
+legacyConfig.CellLowV, legacyConfig.CellCritV = "", "--"
+legacyConfig.CellLowSec, legacyConfig.CellCritSec = 0, 0
+assert(dashboard.translate("CellLowV"):find("3.50 V/cell", 1, true))
+assert(dashboard.translate("CellCritV"):find("3.30 V/cell", 1, true))
+dashboard.update(widget, legacyConfig)
+local function cellAt(tick, volts, expectedPulses)
+  now, telemetry.Vcel = tick, volts
+  dashboard.background(widget)
+  assert(pulses == expectedPulses, "unexpected voltage warning at tick " .. tick)
+end
+
+cellAt(200, 3.50, 0)
+cellAt(790, 3.50, 0)
+cellAt(800, 3.50, 1)
+cellAt(900, 3.30, 1)
+cellAt(1390, 3.30, 1)
+cellAt(1400, 3.30, 2)
+cellAt(1990, 3.30, 2)
+cellAt(2000, 3.30, 3)
+cellAt(2010, nil, 3)
+cellAt(2600, 3.30, 3)
+cellAt(3100, 3.30, 4)
+
+config = options(1)
+config.CellCritV = "3,40"
+config.CellCritSec = 2
+now = 3200
+dashboard.update(widget, config)
+cellAt(3200, 3.40, 4)
+cellAt(3390, 3.40, 4)
+cellAt(3400, 3.40, 5)
+
 print("betaflight_profile_test: ok")
