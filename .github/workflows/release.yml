@@ -66,11 +66,12 @@ jobs:
             ${{ steps.package.outputs.asset_name }}.sha256
           if-no-files-found: error
 
-      - name: Create GitHub release
+      - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ASSET_NAME: ${{ steps.package.outputs.asset_name }}
+          REPLACE_RELEASE: ${{ github.event.forced }}
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +79,12 @@ jobs:
           NOTES_FILE="release-notes/${GITHUB_REF_NAME}.md"
           ASSETS=("${ASSET_NAME}" "${ASSET_NAME}.sha256")
 
-          if [[ -f "${NOTES_FILE}" ]]; then
+          if [[ "${REPLACE_RELEASE}" == "true" ]] && gh release view "${GITHUB_REF_NAME}" >/dev/null; then
+            gh release upload "${GITHUB_REF_NAME}" "${ASSETS[@]}" --clobber
+            if [[ -f "${NOTES_FILE}" ]]; then
+              gh release edit "${GITHUB_REF_NAME}" --notes-file "${NOTES_FILE}"
+            fi
+          elif [[ -f "${NOTES_FILE}" ]]; then
             gh release create "${GITHUB_REF_NAME}" "${ASSETS[@]}" \
               --title "StacyDash ${GITHUB_REF_NAME}" \
               --notes-file "${NOTES_FILE}"

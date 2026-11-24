@@ -265,7 +265,7 @@ MODULE.ledService = MODULE.leds.new({
 })
 local CELL_BATTERY = {
   defaults = {
-    mode = 1, low = 350, critical = 330, lowSeconds = 6, criticalSeconds = 5,
+    mode = 1, low = 360, critical = 330, lowSeconds = 6, criticalSeconds = 5,
   },
   repeatTicks = 600,
   -- EdgeTX haptic length and delay until the next pulse in getTime() ticks.

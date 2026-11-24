@@ -205,7 +205,7 @@ local legacyConfig = options(1)
 legacyConfig.BattEst = 0
 legacyConfig.CellLowV, legacyConfig.CellCritV = "", "--"
 legacyConfig.CellLowSec, legacyConfig.CellCritSec = 0, 0
-assert(dashboard.translate("CellLowV"):find("3.50 V/cell", 1, true))
+assert(dashboard.translate("CellLowV"):find("3.60 V/cell", 1, true))
 assert(dashboard.translate("CellCritV"):find("3.30 V/cell", 1, true))
 dashboard.update(widget, legacyConfig)
 local function cellAt(tick, volts, expectedPulses)
@@ -215,9 +215,9 @@ local function cellAt(tick, volts, expectedPulses)
 end
 
 telemetry.ARM = 1
-cellAt(200, 3.50, 0)
-cellAt(790, 3.50, 0)
-cellAt(800, 3.50, 1)
+cellAt(200, 3.60, 0)
+cellAt(790, 3.60, 0)
+cellAt(800, 3.60, 1)
 cellAt(900, 3.30, 1)
 cellAt(1390, 3.30, 1)
 cellAt(1400, 3.30, 2)
@@ -236,7 +236,7 @@ cellAt(3200, 3.40, 4)
 cellAt(3390, 3.40, 4)
 cellAt(3400, 3.40, 5)
 
-local voltageDefaults = { RxPackMin = 660, RxPackMax = 840, CellLowV = 350, CellCritV = 330 }
+local voltageDefaults = { RxPackMin = 660, RxPackMax = 840, CellLowV = 360, CellCritV = 330 }
 for _, option in ipairs(dashboard.options) do
   local name = option[1]
   if voltageDefaults[name] then

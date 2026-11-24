@@ -272,7 +272,7 @@ O workflow pode ser executado manualmente na aba **Actions** para testar e baixa
 | **Batt Reserve %** | reserva removida da escala útil da bateria | 20% |
 | **Battery Voice** | ativa anúncios de bateria | desligado |
 | **Battery Estimation** | `Auto` prioriza `Bat%`; `LiPo Cell Curve` usa a curva por tensão mesmo com `Bat%` disponível | Auto |
-| **Low Battery (V/cell)** | limite de tensão por célula para bateria baixa | 3,50 V |
+| **Low Battery (V/cell)** | limite de tensão por célula para bateria baixa | 3,60 V |
 | **Low Battery Delay (s)** | tempo na faixa de bateria baixa antes do alerta | 6 s |
 | **Critical Battery (V/cell)** | limite de tensão por célula para bateria crítica | 3,30 V |
 | **Critical Battery Delay (s)** | tempo na faixa crítica antes do alerta | 5 s |
@@ -313,7 +313,7 @@ O modo **LiPo Cell Curve** usa a tabela de descarga do [lua_avrLiX](https://gith
 
 Os alertas por tensão de célula funcionam em **Auto** e **LiPo Cell Curve** quando há leitura válida e link. A faixa crítica tem prioridade sobre a faixa baixa. Cada faixa precisa permanecer ativa durante o seu atraso. O alerta vibra e, com **Battery Voice** ativado, anuncia “Low battery” ou “Critical battery”. Repete a cada 6 s enquanto a condição persistir. O widget usa os padrões se o EdgeTX entregar campos novos ausentes, vazios ou zerados ao abrir uma configuração anterior.
 
-No menu do EdgeTX, as tensões são editadas em centivolts (`cV` ou `cV/cell`). Cada incremento equivale a 0,01 V. Por exemplo, use `350` para 3,50 V por célula e `660` para 6,60 V no pack do receptor. Após atualizar uma instalação existente, confira os quatro campos e reinsira os valores personalizados em centivolts se o rádio não os tiver preservado.
+No menu do EdgeTX, as tensões são editadas em centivolts (`cV` ou `cV/cell`). Cada incremento equivale a 0,01 V. Por exemplo, use `360` para 3,60 V por célula e `660` para 6,60 V no pack do receptor. Após atualizar uma instalação existente, confira os quatro campos e reinsira os valores personalizados em centivolts se o rádio não os tiver preservado.
 
 As vibrações de segurança funcionam independentemente dos arquivos de áudio:
 
