@@ -234,6 +234,15 @@ Se houver mais de um cartão compatível, ou se ele estiver montado em outro loc
 
 O modo `--dry-run` apenas lista as operações necessárias. O script compara o conteúdo local com o destino e copia somente arquivos ausentes ou diferentes; arquivos já atualizados são ignorados. Se `/flights-count.csv` já existir no rádio, ele é sempre preservado para não apagar o histórico de voos.
 
+No Windows, abra o PowerShell na pasta do projeto com o cartão SD conectado:
+
+```powershell
+.\deploy.ps1 -DryRun
+.\deploy.ps1
+```
+
+Se a detecção automática não identificar um único cartão, informe a letra da unidade, como `.\deploy.ps1 -DryRun E:\` para simular ou `.\deploy.ps1 E:\` para instalar. O script preserva o contador de voos existente e copia somente arquivos ausentes ou diferentes.
+
 ### Releases no GitHub
 
 O workflow `.github/workflows/release.yml` gera automaticamente um pacote pronto para o cartão SD. Para publicar uma versão, crie e envie uma tag iniciada por `v`:
