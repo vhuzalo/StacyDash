@@ -309,9 +309,9 @@ Com **Battery Voice** ativado, o widget anuncia os níveis de 50%, 40%, 30%, 20%
 
 O modo **LiPo Cell Curve** usa a tabela de descarga do [lua_avrLiX](https://github.com/vhuzalo/lua_avrLiX) e aplica a reserva configurada ao resultado. Electric usa `Vcel`, OMPHOBBY usa `RxBt` dividido pelo número de células, e Betaflight requer uma fonte adicional `Vcel` em V/célula. Sem uma leitura válida por célula, esse modo mostra `NO DATA`. O perfil Nitro usa as opções do pack do receptor.
 
-Os alertas por tensão de célula funcionam em **Auto** e **LiPo Cell Curve** quando há leitura válida e link. A faixa crítica tem prioridade sobre a faixa baixa. Cada faixa precisa permanecer ativa durante o seu atraso. O alerta vibra e, com **Battery Voice** ativado, anuncia a tensão. Repete a cada 6 s enquanto a condição persistir. O widget usa os padrões se o EdgeTX entregar campos novos ausentes, vazios ou zerados ao abrir uma configuração anterior.
+Os alertas por tensão de célula funcionam em **Auto** e **LiPo Cell Curve** quando há leitura válida e link. A faixa crítica tem prioridade sobre a faixa baixa. Cada faixa precisa permanecer ativa durante o seu atraso. O alerta vibra e, com **Battery Voice** ativado, anuncia “Low battery” ou “Critical battery”. Repete a cada 6 s enquanto a condição persistir. O widget usa os padrões se o EdgeTX entregar campos novos ausentes, vazios ou zerados ao abrir uma configuração anterior.
 
-Em um widget que já estava instalado, o menu do EdgeTX pode mostrar `--` nos campos de tensão acrescentados pela atualização. Os padrões em uso aparecem ao lado dos campos, nos rótulos. Para gravar um valor nesse campo, edite-o no menu do widget.
+No menu do EdgeTX, as tensões são editadas em centivolts (`cV` ou `cV/cell`). Cada incremento equivale a 0,01 V. Por exemplo, use `350` para 3,50 V por célula e `660` para 6,60 V no pack do receptor. Após atualizar uma instalação existente, confira os quatro campos e reinsira os valores personalizados em centivolts se o rádio não os tiver preservado.
 
 As vibrações de segurança funcionam independentemente dos arquivos de áudio:
 

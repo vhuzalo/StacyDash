@@ -195,7 +195,11 @@ dashboard.refresh(widget)
 assertText("NO DATA") -- the forced curve requires a cell voltage
 
 local pulses = 0
-playHaptic = function() pulses = pulses + 1 end
+local pulseLengths = {}
+playHaptic = function(duration)
+  pulses = pulses + 1
+  pulseLengths[pulses] = duration
+end
 local legacyConfig = options(1)
 legacyConfig.BattEst = 0
 legacyConfig.CellLowV, legacyConfig.CellCritV = "", "--"
@@ -229,5 +233,55 @@ dashboard.update(widget, config)
 cellAt(3200, 3.40, 4)
 cellAt(3390, 3.40, 4)
 cellAt(3400, 3.40, 5)
+
+local voltageDefaults = { RxPackMin = 660, RxPackMax = 840, CellLowV = 350, CellCritV = 330 }
+for _, option in ipairs(dashboard.options) do
+  local name = option[1]
+  if voltageDefaults[name] then
+    assert(option[2] == (VALUE or 0) and option[3] == voltageDefaults[name], name)
+    voltageDefaults[name] = nil
+  end
+end
+assert(next(voltageDefaults) == nil)
+
+local playedFiles = {}
+local openFile = io.open
+io.open = function(path, mode)
+  if path:match("^/WIDGETS/StacyDashV4/BatterySounds/") then
+    return openFile(path:sub(2), mode)
+  end
+  return openFile(path, mode)
+end
+playFile = function(path) playedFiles[#playedFiles + 1] = path end
+local spokenNumbers = 0
+playNumber = function() spokenNumbers = spokenNumbers + 1 end
+config.BattVoice = 1
+config.CellLowV, config.CellCritV = 369, 150
+now = 3500
+dashboard.update(widget, config)
+cellAt(3500, 3.69, 5)
+assert(#playedFiles == 0)
+cellAt(4100, 3.69, 6)
+assert(#playedFiles == 1 and playedFiles[1]:match("/low%.wav$"))
+cellAt(4200, 1.50, 6)
+cellAt(4400, 1.50, 7)
+assert(#playedFiles == 2 and playedFiles[2]:match("/crit%.wav$"))
+assert(#playedFiles[1] <= #"/WIDGETS/StacyDashV4/BatterySounds/dead.wav")
+assert(#playedFiles[2] <= #"/WIDGETS/StacyDashV4/BatterySounds/dead.wav")
+assert(spokenNumbers == 0, "voltage alarms should play named clips")
+local sos = { 8, 8, 8, 24, 24, 24, 8, 8, 8 }
+local offsets = { 0, 30, 60, 120, 180, 240, 330, 360, 390 }
+for index = 2, #offsets do
+  cellAt(4400 + offsets[index] - 10, 1.50, 5 + index)
+  cellAt(4400 + offsets[index], 1.50, 6 + index)
+end
+for index, duration in ipairs(sos) do
+  assert(pulseLengths[6 + index] == duration, "incorrect SOS pulse " .. index)
+end
+assert(#playedFiles == 2, "play voice once per SOS sequence")
+cellAt(4990, 1.50, 15)
+cellAt(5000, 1.50, 16)
+assert(#playedFiles == 3 and pulseLengths[16] == 8, "SOS should repeat after six seconds")
+io.open = openFile
 
 print("betaflight_profile_test: ok")

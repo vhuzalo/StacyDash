@@ -7,7 +7,6 @@ local DBLSIZE      = rawget(_G, "DBLSIZE")      or DBLSIZE      or 0
 local VALUE  = rawget(_G, "VALUE")  or 0
 local BOOL   = rawget(_G, "BOOL")   or 2
 local CHOICE = rawget(_G, "CHOICE") or 10
-local STRING = rawget(_G, "STRING") or 3
 local SOURCE = rawget(_G, "SOURCE") or _G.SOURCE or 1
 -- EdgeTX exposes these flags through its read-only global lookup table. The
 -- public Lua name for CENTERED is CENTER, so rawget("CENTERED") silently
@@ -266,9 +265,17 @@ MODULE.ledService = MODULE.leds.new({
 })
 local CELL_BATTERY = {
   defaults = {
-    mode = 1, low = "3.50", critical = "3.30", lowSeconds = 6, criticalSeconds = 5,
+    mode = 1, low = 350, critical = 330, lowSeconds = 6, criticalSeconds = 5,
   },
   repeatTicks = 600,
+  -- EdgeTX haptic length and delay until the next pulse in getTime() ticks.
+  -- Longer gaps after the third and sixth pulses separate S, O and S.
+  sos = {
+    { 8, 30 }, { 8, 30 }, { 8, 60 },
+    { 24, 60 }, { 24, 60 }, { 24, 90 },
+    { 8, 30 }, { 8, 30 }, { 8, 0 },
+  },
+  sosWindowTicks = 450,
   -- avrLiX discharge lookup (vhuzalo/lua_avrLiX). Preserve its centivolt
   -- indexing and bounds, including saturation above the last usable entry.
   curve = {
@@ -350,10 +357,12 @@ local function getValSrc(srcId)
   if type(v) == "table" then v = v.value end
   return tonumber(v)
 end
--- Parse an Rx-pack voltage typed as text ("6.60"), tolerant of whether EdgeTX
--- text entry offers a ".", and backward-compatible with the old integer scale:
---   <=15 -> volts as typed (6.6) ; 16-150 -> old tenths (66->6.6) ; >150 -> hundredths (660->6.6)
 local function parseVolt(s, default)
+  -- VALUE options are stored as integer centivolts.
+  if type(s) == "number" then
+    return s > 0 and s / 100 or default
+  end
+  -- Legacy text can contain volts, tenths of a volt, or centivolts.
   local str = string.match(tostring(s or ""), "^%s*(.-)%s*$")
   local validText = string.match(str, "^%d+$")
                     or string.match(str, "^%d+[.,]%d+$")
@@ -405,10 +414,10 @@ end
 function CELL_BATTERY.configure(opts)
   opts = opts or {}
   local defaults = CELL_BATTERY.defaults
-  local low = parseVolt(opts.CellLowV, tonumber(defaults.low))
-  local critical = parseVolt(opts.CellCritV, tonumber(defaults.critical))
+  local low = parseVolt(opts.CellLowV, defaults.low / 100)
+  local critical = parseVolt(opts.CellCritV, defaults.critical / 100)
   if low <= critical or low > 4.5 or critical <= 1 then
-    low, critical = tonumber(defaults.low), tonumber(defaults.critical)
+    low, critical = defaults.low / 100, defaults.critical / 100
   end
   local lowSeconds = tonumber(opts.CellLowSec) or defaults.lowSeconds
   local criticalSeconds = tonumber(opts.CellCritSec) or defaults.criticalSeconds
@@ -988,14 +997,28 @@ local function playBatteryRemainingAlert(level)
   end
   return false
 end
-local function playBatteryHaptic()
+local function playBatteryHaptic(duration)
   if not playHaptic then return end
   local modeNow = rawget(_G, "PLAY_NOW") or 0
-  pcall(playHaptic, 15, 0, modeNow)
+  pcall(playHaptic, duration or 15, 0, modeNow)
 end
 function CELL_BATTERY.resetAlert()
   CELL_BATTERY.alertBand = nil
   CELL_BATTERY.nextAlert = nil
+  CELL_BATTERY.sosPulse = nil
+end
+function CELL_BATTERY.updateSos(now)
+  local index = CELL_BATTERY.sosPulse
+  if not index then return end
+  if now >= CELL_BATTERY.sosEnd then
+    CELL_BATTERY.sosPulse = nil
+    return
+  end
+  if now < CELL_BATTERY.sosNext then return end
+  local pulse = CELL_BATTERY.sos[index]
+  playBatteryHaptic(pulse[1])
+  CELL_BATTERY.sosNext = now + pulse[2]
+  CELL_BATTERY.sosPulse = index < #CELL_BATTERY.sos and index + 1 or nil
 end
 function CELL_BATTERY.updateAlert(now, volts, voiceEnabled)
   if not A.linkAvailable or not volts or volts <= 1 or volts > OPT.cellLowV then
@@ -1008,14 +1031,19 @@ function CELL_BATTERY.updateAlert(now, volts, voiceEnabled)
     local delay = critical and OPT.cellCritSeconds or OPT.cellLowSeconds
     CELL_BATTERY.alertBand = band
     CELL_BATTERY.nextAlert = now + delay * 100
+    CELL_BATTERY.sosPulse = nil
   end
-  if now < CELL_BATTERY.nextAlert then return end
-  playBatteryHaptic()
-  if voiceEnabled and type(playNumber) == "function" then
-    local precision = rawget(_G, "PREC2") or 32
-    pcall(playNumber, math.floor(volts * 100 + 0.5), rawget(_G, "UNIT_VOLTS") or 1, precision)
+  if now >= CELL_BATTERY.nextAlert then
+    CELL_BATTERY.sosPulse = 1
+    CELL_BATTERY.sosNext = now
+    CELL_BATTERY.sosEnd = now + CELL_BATTERY.sosWindowTicks
+    if voiceEnabled then
+      local clip = critical and "crit.wav" or "low.wav"
+      BATTERY_VOICE.play(BATTERY_VOICE.path .. clip)
+    end
+    CELL_BATTERY.nextAlert = now + CELL_BATTERY.repeatTicks
   end
-  CELL_BATTERY.nextAlert = now + CELL_BATTERY.repeatTicks
+  CELL_BATTERY.updateSos(now)
 end
 local function resetBatteryAlertState(scope)
   scope = scope or "all"
@@ -2644,14 +2672,14 @@ local options = {
   { "DispLED", BOOL, 0 },
   { "ArmLED", CHOICE, 3, LED_COLOR_NAMES },
   { "DisarmLED", CHOICE, 1, LED_COLOR_NAMES },
-  { "RxPackMin", STRING, "6.60" },
-  { "RxPackMax", STRING, "8.40" },
+  { "RxPackMin", VALUE, 660, 400, 900 },
+  { "RxPackMax", VALUE, 840, 400, 900 },
   { "MotorSw", SOURCE, 0 },
   { "ElrsSw",  SOURCE, 0 },
   { "BattEst", CHOICE, CELL_BATTERY.defaults.mode, { "Auto", "LiPo Cell Curve" } },
-  { "CellLowV", STRING, CELL_BATTERY.defaults.low },
+  { "CellLowV", VALUE, CELL_BATTERY.defaults.low, 101, 450 },
   { "CellLowSec", VALUE, CELL_BATTERY.defaults.lowSeconds, 1, 60 },
-  { "CellCritV", STRING, CELL_BATTERY.defaults.critical },
+  { "CellCritV", VALUE, CELL_BATTERY.defaults.critical, 101, 450 },
   { "CellCritSec", VALUE, CELL_BATTERY.defaults.criticalSeconds, 1, 60 },
 }
 local OPTION_LABELS = {
@@ -2666,14 +2694,14 @@ local OPTION_LABELS = {
   DispLED   = "Display LEDs",
   ArmLED    = "Armed LED Color",
   DisarmLED = "Disarmed LED Color",
-  RxPackMin= "Rx Pack Minimum",
-  RxPackMax= "Rx Pack Maximum",
+  RxPackMin= "Rx Pack Minimum (cV)",
+  RxPackMax= "Rx Pack Maximum (cV)",
   MotorSw  = "Motor Switch",
   ElrsSw   = "ELRS Screen Switch",
   BattEst  = "Battery Estimation",
-  CellLowV = "Low Battery (default " .. CELL_BATTERY.defaults.low .. " V/cell)",
+  CellLowV = string.format("Low Battery (cV/cell, default %.2f V/cell)", CELL_BATTERY.defaults.low / 100),
   CellLowSec = "Low Delay (default " .. CELL_BATTERY.defaults.lowSeconds .. " s)",
-  CellCritV = "Critical Battery (default " .. CELL_BATTERY.defaults.critical .. " V/cell)",
+  CellCritV = string.format("Critical Battery (cV/cell, default %.2f V/cell)", CELL_BATTERY.defaults.critical / 100),
   CellCritSec = "Critical Delay (default " .. CELL_BATTERY.defaults.criticalSeconds .. " s)",
 }
 local function translate(name, language)
